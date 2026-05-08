@@ -131,6 +131,26 @@ GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"..."}
 
 Important: keep it as **one line** (no line breaks) in `.env`.
 
+## Production deploy (unified host — Ocean Gate, VPS, Render web service, etc.)
+
+Use this when **one public URL** serves both the static portal and the API (same process or reverse proxy in front of uvicorn).
+
+1. **`static/config.js`**: keep `window.API_BASE_URL` as **`""`** (empty string). The UI calls `/api/...` on the same origin as the page.
+2. **Server environment**: set **`ALLOWED_ORIGINS`** to your **exact** public portal origin (scheme + host, no trailing slash), e.g. `https://your-app.example.com`. Add `http://127.0.0.1:8000` only for local testing.
+3. **`PUBLIC_BASE_URL`**: same public HTTPS URL as users open in the browser (used in email links).
+
+Restart/redeploy after changing env vars.
+
+### Optional: split deploy (static site on host A, API on host B)
+
+Example: static files on Netlify (`netlify.toml` publishes `static/`) and FastAPI on Render (`render.yaml`). The browser performs cross-origin requests; configure both sides:
+
+1. **`static/config.js`**: set `window.API_BASE_URL` to the API’s public HTTPS origin (no trailing slash).
+2. **`ALLOWED_ORIGINS`** on the API: include **every** frontend origin users use (e.g. `https://your-site.netlify.app`). Must match exactly or login fails in the browser despite healthy API logs.
+3. **`PUBLIC_BASE_URL`**: the user-facing portal URL for emails.
+
+Redeploy the static host after editing `config.js`; redeploy/restart the API after env changes.
+
 ## Tests
 
 Basic smoke tests live in `tests/`.

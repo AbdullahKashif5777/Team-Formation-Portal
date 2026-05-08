@@ -11,10 +11,11 @@ services:
         generateValue: true
       - key: DATABASE_URL
         value: sqlite:///./umt_portal.db
-      # Split frontend (Netlify): comma-separated origins, https, no trailing slash.
+      # Browser origins allowed for CORS (https, no trailing slash). Unified deploy: your public API/site URL.
+      # Split static+API deploy: include every static frontend origin; set static/config.js API_BASE_URL to this service URL.
       - key: ALLOWED_ORIGINS
         sync: false
-      # Public portal URL (email links); use your Netlify URL in production.
+      # Public portal URL for email links (same as user-facing site URL when unified).
       - key: PUBLIC_BASE_URL
         sync: false
       # Required when users table is empty (first deploy).

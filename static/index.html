@@ -231,6 +231,14 @@
   let availableCourses = [];
   initTheme();
 
+  /** Split-host debugging: surfaces browser error + configured API origin in login/register UI. */
+  function portalNetworkErrorDetail(err) {
+    var raw = typeof window.API_BASE_URL === 'string' ? window.API_BASE_URL.trim() : '';
+    var base = raw.replace(/\/+$/, '') || (typeof location !== 'undefined' ? location.origin : '');
+    var reason = (err && err.message) ? String(err.message) : String(err);
+    return reason + ' · API base: ' + base + ' · See DevTools Network/Console (CORS, DNS, HTTPS).';
+  }
+
   // ── Redirect if already logged in ──
   const savedToken = localStorage.getItem('token');
   const savedRole  = localStorage.getItem('role');
@@ -431,7 +439,8 @@
         else window.location.href = data.role === 'lead' ? '/lead' : '/member';
       }, 800);
     } catch (e) {
-      showError(errEl, 'Network error. Is the server running?');
+      console.warn('[portal] login fetch failed', e);
+      showError(errEl, 'Cannot reach the API. ' + portalNetworkErrorDetail(e));
     } finally {
       setLoading('login', false);
     }
@@ -510,7 +519,8 @@
         }, 800);
       }
     } catch (e) {
-      showError(errEl, 'Network error. Is the server running?');
+      console.warn('[portal] register fetch failed', e);
+      showError(errEl, 'Cannot reach the API. ' + portalNetworkErrorDetail(e));
     } finally {
       setLoading('reg', false);
     }
@@ -544,7 +554,10 @@
       });
       if (res.ok) { succEl.style.display = 'block'; }
       else { showError(errEl, "Failed to send link"); }
-    } catch(e) { showError(errEl, "Network error"); }
+    } catch (e) {
+      console.warn('[portal] forgot-password fetch failed', e);
+      showError(errEl, 'Cannot reach the API. ' + portalNetworkErrorDetail(e));
+    }
     finally {
       document.getElementById('forgot-btn').disabled = false;
       document.getElementById('forgot-spinner').style.display = 'none';
