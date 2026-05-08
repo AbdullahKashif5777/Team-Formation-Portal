@@ -4,4 +4,4 @@
  *   window.API_BASE_URL = 'https://your-service.onrender.com';
  * Leave empty when using one server (local uvicorn): same-origin /api and /ws work.
  */
-window.API_BASE_URL = "";
+window.API_BASE_URL = "https://team-formation-portal.onrender.com";

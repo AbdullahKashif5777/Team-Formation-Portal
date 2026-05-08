@@ -1,3 +1,5 @@
+# Render Blueprint — Web service only. Override DATABASE_URL in the dashboard with
+# Postgres (Neon/Render PostgreSQL) for production; default SQLite is ephemeral on Render.
 services:
   - type: web
     name: umt-team-portal
@@ -9,6 +11,25 @@ services:
         generateValue: true
       - key: DATABASE_URL
         value: sqlite:///./umt_portal.db
+      # Split frontend (Netlify): comma-separated origins, https, no trailing slash.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Public portal URL (email links); use your Netlify URL in production.
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Required when users table is empty (first deploy).
+      - key: ADMIN1_EMAIL
+        sync: false
+      - key: ADMIN1_PASSWORD
+        sync: false
+      - key: ADMIN1_NAME
+        sync: false
+      - key: ADMIN2_EMAIL
+        sync: false
+      - key: ADMIN2_PASSWORD
+        sync: false
+      - key: ADMIN2_NAME
+        sync: false
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASSWORD
