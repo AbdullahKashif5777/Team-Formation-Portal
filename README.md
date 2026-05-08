@@ -131,13 +131,19 @@ GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"..."}
 
 Important: keep it as **one line** (no line breaks) in `.env`.
 
-## Production deploy (unified host — Ocean Gate, VPS, Render web service, etc.)
+## Production deploy (unified host — DigitalOcean App Platform, Render, VPS, etc.)
 
 Use this when **one public URL** serves both the static portal and the API (same process or reverse proxy in front of uvicorn).
 
 1. **`static/config.js`**: keep `window.API_BASE_URL` as **`""`** (empty string). The UI calls `/api/...` on the same origin as the page.
-2. **Server environment**: set **`ALLOWED_ORIGINS`** to your **exact** public portal origin (scheme + host, no trailing slash), e.g. `https://your-app.example.com`. Add `http://127.0.0.1:8000` only for local testing.
-3. **`PUBLIC_BASE_URL`**: same public HTTPS URL as users open in the browser (used in email links).
+2. **Server environment** (same variable names as on Render; the app reads these from the process environment):  
+   - **`ALLOWED_ORIGINS`**: your **exact** public origin — scheme + host, **no trailing slash**. Example (DigitalOcean App Platform): `https://teamformationportal-ssr3o.ondigitalocean.app`  
+   - **`PUBLIC_BASE_URL`**: the same portal URL for email links (typically identical to the origin above, without a path).  
+   Add `http://127.0.0.1:8000` to `ALLOWED_ORIGINS` only if you also test locally against production-like settings.
+
+Names like “base URL” or “origin” on a host dashboard must map to **`ALLOWED_ORIGINS`** and **`PUBLIC_BASE_URL`** — arbitrary env keys are not read by this app unless you add code for them.
+
+**After moving from Netlify (or any old static host) to a unified Ocean Gate / App Platform URL:** update **`ALLOWED_ORIGINS`** and **`PUBLIC_BASE_URL`** on the API to that **new** HTTPS origin. Leaving only `https://….netlify.app` breaks CORS (browser sends `Origin: https://your-app-platform-host`) and leaves email links pointing at the wrong site. If some users still use an old Netlify URL, include **both** origins comma-separated; otherwise remove Netlify from env.
 
 Restart/redeploy after changing env vars.
 
