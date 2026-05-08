@@ -70,6 +70,8 @@ async def log_slow_requests(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # Fail closed: never crash the process on unexpected errors.
+    # Log the real exception so host logs (Render, DO, etc.) show the cause of 500s.
+    logger.error("Unhandled %s %s: %s", request.method, request.url.path, exc, exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 app.add_middleware(
@@ -98,15 +100,17 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def startup():
     create_tables()
     log_db_healthcheck()
-    if app_settings.smtp_configured:
+    if app_settings.RESEND_API_KEY:
+        logger.info("Outbound email via Resend API (HTTPS); EMAIL_FROM must use a Resend-verified domain.")
+    elif app_settings.smtp_configured:
         logger.info(
-            "Outbound email (SMTP) enabled via %s:%s",
+            "Outbound email via SMTP %s:%s (blocked on some free hosts — use RESEND_API_KEY if sends fail).",
             app_settings.SMTP_HOST,
             app_settings.SMTP_PORT,
         )
     else:
         logger.warning(
-            "Outbound email disabled: set SMTP_USER and SMTP_PASSWORD on the server to send mail."
+            "Outbound email disabled: set RESEND_API_KEY or SMTP_USER + SMTP_PASSWORD."
         )
 
 
