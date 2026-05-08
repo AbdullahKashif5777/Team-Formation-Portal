@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Portal · Student Dashboard</title>
+  <meta name="description" content="Student portal – browse teams and request to join a project team."/>
+  <link rel="stylesheet" href="/static/style.css?v=13"/>
+  <style>
+    .search-bar {
+      display: flex; gap: 10px; margin-bottom: 20px;
+    }
+    .search-input {
+      flex: 1; padding: 11px 16px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle);
+      color: var(--text-1); font-family: 'Inter', sans-serif; font-size: 0.9rem;
+      outline: none; transition: all 0.2s;
+    }
+    .search-input:focus { border-color: var(--violet); background: rgba(255,255,255,0.07); }
+    .search-input::placeholder { color: var(--text-3); }
+    .team-grid { display: flex; flex-direction: column; gap: 0; overflow-y: auto; max-height: 65vh; padding-right: 4px; }
+    .my-status-section { margin-bottom: 24px; }
+    .member-team-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .request-sent-notice {
+      padding: 12px 14px; border-radius: var(--radius-sm);
+      background: var(--amber-dim); border: 1px solid rgba(245,158,11,0.3);
+      font-size: 0.85rem; color: var(--text-2);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .ws-status-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.78rem; color: var(--text-3);
+    }
+    .ws-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-3); transition: background 0.3s;
+    }
+    .ws-dot.connected { background: var(--emerald); animation: pulse 2s infinite; }
+    .info-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 20px; font-size: 0.78rem;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border-subtle);
+      color: var(--text-3);
+    }
+    .section-tabs {
+      display: flex; gap: 8px; overflow-x: auto; margin-bottom: 20px; padding-bottom: 4px;
+    }
+    .section-tab {
+      padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-subtle); color: var(--text-2); font-size: 0.85rem;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .section-tab:hover { background: rgba(255,255,255,0.1); }
+    .section-tab.active { background: var(--violet); color: #fff; border-color: var(--violet); }
+
+    .invite-card {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-subtle);
+      margin-top: 10px;
+    }
+    .invite-title { font-weight: 700; font-size: 0.9rem; color: var(--text-1); }
+    .invite-sub { margin-top: 4px; font-size: 0.8rem; color: var(--text-3); }
+    .invite-actions { display:flex; gap:10px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+<div class="bg-anim">
+  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+</div>
+
+<!-- Request Modal -->
+<div class="modal-overlay glass" id="modal-overlay">
+  <div class="modal glass glass-glow">
+    <div class="modal-title">REQ Request to Join Team</div>
+    <div class="modal-sub" id="modal-team-name">Loading team details…</div>
+    <div class="form-stack">
+      <div class="form-group">
+        <label class="form-label">Optional Message to Team Lead</label>
+        <textarea id="modal-message" class="form-input" rows="3"
+          placeholder="Introduce yourself, mention your skills…"
+          style="resize:vertical; font-family:inherit;"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="modal-send-btn" onclick="submitRequest()">
+        <span id="modal-btn-text">Send Request</span>
+        <span id="modal-spinner" class="spinner" style="display:none"></span>
+      </button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrapper">
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">UP</div>
+      <span class="brand-name">UMT Team Portal</span>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle-btn">Light mode</button>
+      <div class="ws-status-bar">
+        <div class="ws-dot" id="ws-dot"></div>
+        <span id="ws-status">Connecting…</span>
+      </div>
+      <span class="nav-badge amber">Student</span>
+      <span class="nav-user" id="nav-user-name">Loading…</span>
+      <button class="btn-logout" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <div style="padding: 24px 32px 0; max-width:1400px; margin:0 auto;">
+    <div class="section-tabs" id="section-tabs-container">
+      <!-- Tabs rendered here -->
+    </div>
+  </div>
+
+  <div class="portal-layout portal-2col">
+
+    <!-- LEFT: My Status -->
+    <div style="display:flex; flex-direction:column; gap:24px;">
+
+      <!-- My Status Card -->
+      <div class="glass panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="panel-icon">MS</span> My Status</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <div class="info-chip" id="formation-close-chip" style="display:none;"></div>
+            <div class="info-chip" id="my-sid">Loading…</div>
+          </div>
+        </div>
+
+        <div id="status-banner-wrap">
+          <div class="status-banner none">
+            <div class="status-icon">ST</div>
+            <div>
+              <div class="status-text-title">Not In A Team</div>
+              <div class="status-text-sub">Browse available teams and send a join request.</div>
+            </div>
+          </div>
+        </div>
+
+      <div id="invites-wrap" style="display:none; margin-top: 14px;">
+        <div class="divider"></div>
+        <div class="form-label" style="margin-bottom:10px;">Team Invites</div>
+        <div id="invites-list"></div>
+      </div>
+
+        <div id="accepted-team-details" style="display:none; margin-top:16px;">
+          <div class="divider"></div>
+          <div class="form-label" style="margin-bottom:10px;">Your Teammates</div>
+          <div id="teammates-list"></div>
+        </div>
+
+        <div id="cancel-request-wrap" style="display:none; margin-top:16px;">
+          <!-- Cancel buttons rendered in banner -->
+        </div>
+
+        <div id="transfer-wrap" style="display:none; margin-top:16px;">
+          <div class="divider"></div>
+          <div class="form-label" style="margin-bottom:10px;">Change Section</div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="transfer-section-select" class="form-input" style="min-width:260px;"></select>
+            <button class="btn btn-ghost btn-sm" onclick="transferSection()">Change Section</button>
+          </div>
+          <div class="tiny" style="margin-top:6px;">Only available when you are not accepted in any team for this section.</div>
+        </div>
+      </div>
+
+      <!-- Student Info Card -->
+      <div class="glass panel">
+        <div class="panel-title" style="margin-bottom:16px;"><span class="panel-icon">ID</span> My Info</div>
+        <div class="member-card" style="margin-bottom:0;">
+          <div class="member-avatar" id="info-avatar">??</div>
+          <div class="member-info">
+            <div class="member-name" id="info-name">Loading…</div>
+            <div class="member-id" id="info-email">…</div>
+            <div class="member-id" id="info-sid" style="margin-top:2px; color:var(--violet-light);">…</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Browse Teams -->
+    <div class="glass panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-icon">AT</span> Available Teams</div>
+        <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+          <div class="info-chip" id="formation-close-teams" style="display:none;"></div>
+          <button class="btn btn-ghost btn-sm" onclick="loadMyStatus()">↺ Refresh</button>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <input class="search-input" id="search-input" type="text"
+               placeholder="Search by lead name or team name…"
+               oninput="debouncedFilterTeams()"/>
+      </div>
+
+      <div class="team-grid" id="teams-grid">
+        <div class="empty-state">
+          <div class="empty-icon">..</div>
+          <div class="empty-title">Loading Teams…</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+const API = window.__portalApiBase();
+initTheme();
+const token = localStorage.getItem('token');
+const userName = localStorage.getItem('user_name') || 'Student';
+const userId = parseInt(localStorage.getItem('user_id') || '0');
+const defaultSectionId = localStorage.getItem('default_section');
+
+if (!token) {
+  window.location.href = '/';
+}
+
+document.getElementById('nav-user-name').textContent = userName;
+
+let sectionsData = [];
+let currentSectionId = null;
+let selectedTeamId = null;
+let ws = null;
+let allCourses = [];
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connectWS() {
+  const wsUrl = window.__portalWsUrl(userId, token);
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-status').textContent = 'Live';
+    ws._ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-status').textContent = 'Reconnecting…';
+    clearInterval(ws._ping);
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    if (e.data === 'pong') return;
+    const { event, data } = JSON.parse(e.data);
+    handleWsEvent(event, data);
+  };
+}
+
+function handleWsEvent(event, data) {
+  // If event has section_id, check if it's the one we're currently viewing
+  const isCurrentSection = !data.section_id || data.section_id == currentSectionId;
+  const sectionName = data.section_id ? (sectionsData.find(s => s.section_id == data.section_id)?.course_name || 'another section') : '';
+
+  if (event === 'request_accepted') {
+    if (isCurrentSection) {
+      toast('success', 'Accepted', `You have been accepted into "${data.team_name}"!`);
+    } else {
+      toast('success', 'Team Accepted', `You were accepted into a team in ${sectionName}!`);
+    }
+    scheduleLoadMyStatus();
+  } else if (event === 'invite_accepted') {
+    if (isCurrentSection) {
+      toast('success', 'Invite Accepted', `You joined "${data.team_name}"!`);
+    } else {
+      toast('success', 'Invite Accepted', `You joined a team in ${sectionName}!`);
+    }
+    scheduleLoadMyStatus();
+  } else if (event === 'request_rejected') {
+    if (isCurrentSection) {
+      toast('error', 'Request Not Accepted', `Your request for "${data.team_name}" was declined.`);
+    } else {
+      toast('info', 'Request Update', `A request in ${sectionName} was declined.`);
+    }
+    scheduleLoadMyStatus();
+  } else if (event === 'removed_from_team') {
+    if (isCurrentSection) {
+      toast('warning', 'Removed from Team', `You have been removed from "${data.team_name}".`);
+    } else {
+      toast('warning', 'Team Update', `You were removed from a team in ${sectionName}.`);
+    }
+    scheduleLoadMyStatus();
+  } else if (event === 'team_invite') {
+    if (isCurrentSection) {
+      toast('info', 'Team Invite', `You’ve been invited to join "${data.team_name}".`);
+    } else {
+      toast('info', 'Team Invite', `You’ve been invited to join a team in ${sectionName}.`);
+    }
+    scheduleLoadMyStatus();
+  } else if (event === 'team_updated') {
+    if (isCurrentSection) {
+      scheduleLoadMyStatus();
+    }
+  }
+}
+
+let _loadMyStatusTimer = null;
+function scheduleLoadMyStatus() {
+  if (_loadMyStatusTimer) return;
+  _loadMyStatusTimer = setTimeout(() => {
+    _loadMyStatusTimer = null;
+    loadMyStatus();
+  }, 100);
+}
+
+// ── Load my info ─────────────────────────────────────────────────────────────
+async function loadMe() {
+  try {
+    const res = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    const initials = data.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    document.getElementById('info-avatar').textContent = initials;
+    document.getElementById('info-name').textContent = data.name;
+    document.getElementById('info-email').textContent = data.email;
+    document.getElementById('info-sid').textContent = data.student_id || '—';
+    document.getElementById('my-sid').textContent = data.student_id || data.email;
+  } catch(e) {}
+}
+
+// ── Load status & Teams ───────────────────────────────────────────────────────
+async function loadMyStatus() {
+  try {
+    const res = await fetch(`${API}/api/teams/my-team`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    sectionsData = data.sections || [];
+    
+    if (sectionsData.length > 0) {
+      if (!currentSectionId) {
+        const found = sectionsData.find(s => s.section_id == defaultSectionId);
+        currentSectionId = found ? found.section_id : sectionsData[0].section_id;
+      }
+      renderTabs();
+      renderCurrentSection();
+    } else {
+      document.getElementById('status-banner-wrap').innerHTML = `<div class="status-banner none">
+        <div class="status-icon">AL</div>
+        <div><div class="status-text-title">No Enrollments</div><div class="status-text-sub">You are not enrolled in any sections.</div></div></div>`;
+      document.getElementById('teams-grid').innerHTML = '';
+    }
+  } catch(e) {}
+}
+
+function selectSection(id) {
+  currentSectionId = id;
+  localStorage.setItem('default_section', id);
+  const selected = sectionsData.find(s => s.section_id == id);
+  if (selected && selected.role === 'lead') {
+    window.location.href = '/lead';
+    return;
+  }
+  renderTabs();
+  renderCurrentSection();
+}
+
+function renderTabs() {
+  const container = document.getElementById('section-tabs-container');
+  container.innerHTML = sectionsData.map(s => `
+    <div class="section-tab ${s.section_id == currentSectionId ? 'active' : ''}" 
+         onclick="selectSection(${s.section_id})">
+      ${s.course_name} (${s.section_name})
+    </div>
+  `).join('');
+}
+
+function renderCurrentSection() {
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (s && s.role === 'lead') {
+    window.location.href = '/lead';
+    return;
+  }
+  if (!s) return;
+
+  // Formation closing time (visibility requirement)
+  const closeChip = document.getElementById('formation-close-chip');
+  if (closeChip) {
+    if (s.formation_end) {
+      closeChip.style.display = 'inline-flex';
+      closeChip.textContent = `Closes: ${new Date(s.formation_end).toLocaleString()}`;
+    } else {
+      closeChip.style.display = 'none';
+      closeChip.textContent = '';
+    }
+  }
+  const closeTeams = document.getElementById('formation-close-teams');
+  if (closeTeams) {
+    if (s.formation_end) {
+      closeTeams.style.display = 'inline-flex';
+      closeTeams.textContent = `Closes: ${new Date(s.formation_end).toLocaleString()}`;
+    } else {
+      closeTeams.style.display = 'none';
+      closeTeams.textContent = '';
+    }
+  }
+
+  // Status
+  const wrap = document.getElementById('status-banner-wrap');
+  const detailsEl = document.getElementById('accepted-team-details');
+  detailsEl.style.display = 'none';
+  const invitesWrap = document.getElementById('invites-wrap');
+  if (invitesWrap) invitesWrap.style.display = 'none';
+
+  if (s.status === 'accepted') {
+    wrap.innerHTML = `<div class="status-banner accepted">
+      <div class="status-icon">OK</div>
+      <div>
+        <div class="status-text-title">In Team: ${s.team_name}</div>
+        <div class="status-text-sub">Lead: ${s.lead_name} · ${s.lead_email}</div>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+        <button class="btn btn-ghost btn-sm" onclick="window.location.href='/roster?section_id=${currentSectionId}&role=member'">
+          View Roster
+        </button>
+      </div>
+    </div>`;
+    if (s.accepted_members && s.accepted_members.length > 1) {
+      detailsEl.style.display = 'block';
+      document.getElementById('teammates-list').innerHTML = s.accepted_members
+        .filter(m => m.name !== userName)
+        .map(m => `<div class="member-card">
+          <div class="member-avatar">${m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>
+          <div class="member-info">
+            <div class="member-name">${m.name}</div>
+            <div class="member-id">${m.student_id || '—'}</div>
+            <div class="member-id" style="font-size:0.78rem;color:var(--text-3);">${m.email || ''}</div>
+          </div>
+        </div>`).join('') || '<div style="font-size:0.83rem;color:var(--text-3);">You\'re the only member so far.</div>';
+    }
+  } else if (s.status === 'pending') {
+    wrap.innerHTML = s.pending_requests.map(p => `
+      <div class="status-banner pending" style="margin-bottom:8px; display:flex; align-items:center;">
+      <div class="status-icon">PD</div>
+        <div style="flex:1">
+          <div class="status-text-title">Request Pending</div>
+          <div class="status-text-sub">Awaiting response from ${p.lead_name} (${p.team_name})</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="cancelRequest(${p.request_id})">Cancel</button>
+      </div>
+    `).join('');
+  } else if (s.status === 'rejected') {
+    wrap.innerHTML = `<div class="status-banner rejected">
+      <div class="status-icon">NO</div>
+      <div>
+        <div class="status-text-title">Request Declined</div>
+        <div class="status-text-sub">Your last request to ${s.lead_name} was not accepted. You can try another team.</div>
+      </div>
+    </div>`;
+  } else {
+    wrap.innerHTML = `<div class="status-banner none">
+      <div class="status-icon">ST</div>
+      <div>
+        <div class="status-text-title">Not In A Team</div>
+        <div class="status-text-sub">Browse available teams on the right and send a join request.</div>
+      </div>
+    </div>`;
+  }
+
+  // Invites (lead -> student) are additive and do not change the legacy status field.
+  renderInvites(s);
+
+  // Section transfer UI (only if unassigned per strict requirement: Pending or None)
+  renderTransferUI(s);
+
+  // Filter & Render Teams
+  filterTeams();
+}
+
+async function loadCoursesOnce() {
+  if (allCourses.length) return;
+  try {
+    const res = await fetch(`${API}/api/auth/courses`);
+    const data = await res.json().catch(() => ([]));
+    allCourses = Array.isArray(data) ? data : [];
+  } catch (_) {
+    allCourses = [];
+  }
+}
+
+function renderTransferUI(sectionData) {
+  const wrap = document.getElementById('transfer-wrap');
+  const sel = document.getElementById('transfer-section-select');
+  if (!wrap || !sel) return;
+
+  const eligible = (sectionData.status === 'pending' || sectionData.status === 'none');
+  if (!eligible) {
+    wrap.style.display = 'none';
+    sel.innerHTML = '';
+    return;
+  }
+
+  wrap.style.display = 'block';
+  // Populate dropdown with other sections in the SAME course.
+  const courseId = sectionData.course_id;
+  const course = (allCourses || []).find(c => c.id == courseId);
+  const sections = (course?.sections || []).filter(x => x.id != sectionData.section_id);
+  if (sections.length === 0) {
+    sel.innerHTML = `<option value="">No other sections available</option>`;
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = `<option value="">Select target section…</option>` + sections.map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+}
+
+async function transferSection() {
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (!s) return;
+  await loadCoursesOnce();
+
+  const sel = document.getElementById('transfer-section-select');
+  const target = parseInt(sel.value || '0');
+  if (!target) return toast('warning', 'Select Section', 'Choose a target section first.');
+
+  try {
+    const res = await fetch(`${API}/api/member/transfer-section`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_section_id: currentSectionId, target_section_id: target }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast('error', 'Transfer Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    toast('success', 'Section Updated', 'Your section has been changed.');
+    // Refresh and switch to the new section tab if present.
+    await loadMyStatus();
+  } catch (e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+}
+function renderInvites(sectionData) {
+  const invitesWrap = document.getElementById('invites-wrap');
+  const listEl = document.getElementById('invites-list');
+  if (!invitesWrap || !listEl) return;
+
+  const invites = sectionData.pending_invites || [];
+  if (!Array.isArray(invites) || invites.length === 0 || sectionData.status === 'accepted') {
+    invitesWrap.style.display = 'none';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  invitesWrap.style.display = 'block';
+  listEl.innerHTML = invites.map(i => `
+    <div class="invite-card">
+      <div class="invite-title">Invite to join: ${i.team_name}</div>
+      <div class="invite-sub">Lead: ${i.lead_name} · ${i.lead_email}</div>
+      ${i.message ? `<div class="invite-sub" style="margin-top:6px;">Message: ${escapeHtml(i.message)}</div>` : ''}
+      <div class="invite-actions">
+        <button class="btn btn-success btn-sm" onclick="acceptInvite(${i.invite_id})">Accept</button>
+        <button class="btn btn-danger btn-sm" onclick="declineInvite(${i.invite_id})">Decline</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function acceptInvite(inviteId) {
+  try {
+    const res = await fetch(`${API}/api/teams/invites/${inviteId}/accept`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast('error', 'Accept Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    toast('success', 'Invite Accepted', 'Team updated successfully.');
+    await loadMyStatus();
+  } catch (e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+}
+
+async function declineInvite(inviteId) {
+  try {
+    const res = await fetch(`${API}/api/teams/invites/${inviteId}/decline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast('error', 'Decline Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    toast('info', 'Invite Declined', 'You can still browse other teams.');
+    await loadMyStatus();
+  } catch (e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+let _filterTeamsTimer = null;
+function debouncedFilterTeams() {
+  if (_filterTeamsTimer) clearTimeout(_filterTeamsTimer);
+  _filterTeamsTimer = setTimeout(() => {
+    _filterTeamsTimer = null;
+    filterTeams();
+  }, 150);
+}
+
+function filterTeams() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (!s || !s.available_teams) {
+    document.getElementById('teams-grid').innerHTML = '';
+    return;
+  }
+
+  const filtered = s.available_teams.filter(t =>
+    t.team_name?.toLowerCase().includes(q) ||
+    t.name?.toLowerCase().includes(q) ||
+    t.lead_name.toLowerCase().includes(q)
+  );
+  renderTeams(filtered, s);
+}
+
+function renderTeams(teams, sectionData) {
+  const grid = document.getElementById('teams-grid');
+  if (teams.length === 0) {
+    grid.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">--</div>
+      <div class="empty-title">No Teams Found</div>
+      <div class="empty-desc">There are no teams available in this section or none matched your search.</div>
+    </div>`;
+    return;
+  }
+
+  const isInTeam = sectionData.status === 'accepted';
+  const pendingArr = sectionData.status === 'pending' ? sectionData.pending_requests : [];
+
+  grid.innerHTML = teams.map(t => {
+    const full = t.slots_available <= 0;
+    const pct = Math.round((t.accepted_count / t.max_members) * 100);
+    const hasRequestedThisTeam = pendingArr.some(p => p.team_id === t.id);
+    const canRequest = !isInTeam && !hasRequestedThisTeam && !full;
+    const teamName = t.name || (t.lead_name + "'s Team");
+    const safeName = teamName.replace(/'/g, "\\'");
+    const safeLead = t.lead_name.replace(/'/g, "\\'");
+    return `
+    <div class="team-card ${full ? 'full' : ''}" onclick="${canRequest ? `openModal(${t.id}, '${safeName}', '${safeLead}')` : ''}">
+      <div class="team-header">
+        <div>
+          <div class="team-name">${teamName}</div>
+          <div class="team-lead-info">Lead ${t.lead_name} · ${t.lead_email}</div>
+        </div>
+        ${full
+          ? '<span class="badge badge-full">Full</span>'
+          : `<span class="badge badge-accepted">${t.slots_available} slot${t.slots_available>1?'s':''} left</span>`}
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
+      <div class="slot-info">
+        <span>${t.accepted_count}/${t.max_members} members</span>
+        ${canRequest ? '<span style="margin-left:auto;color:var(--violet-light);font-size:0.78rem;">Click to request →</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function exitTeam() {
+  if (!currentSectionId) return;
+  if (!confirm('Exit your current team for this section?')) return;
+  const btn = document.querySelector('button[onclick="exitTeam()"]');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/member/exit-team`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section_id: currentSectionId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast('error', 'Exit Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    toast('success', 'Exited Team', 'You can now request another team (while formation is open).');
+    await loadMyStatus();
+  } catch (e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+  finally { if (btn) btn.disabled = false; }
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(teamId, teamName, leadName) {
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (s && s.status === 'accepted') { toast('info', 'Already in a team', 'You cannot join another team in this section.'); return; }
+  
+  selectedTeamId = teamId;
+  document.getElementById('modal-team-name').textContent = `Requesting to join: ${teamName} (Lead: ${leadName})`;
+  document.getElementById('modal-message').value = '';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  selectedTeamId = null;
+}
+
+async function submitRequest() {
+  if (!selectedTeamId) return;
+  const message = document.getElementById('modal-message').value.trim();
+  const btn = document.getElementById('modal-send-btn');
+  btn.disabled = true;
+  document.getElementById('modal-btn-text').style.display = 'none';
+  document.getElementById('modal-spinner').style.display = 'inline-block';
+
+  try {
+    const res = await fetch(`${API}/api/teams/request`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team_id: selectedTeamId, message: message || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast('error', 'Request Failed', data.detail || 'Something went wrong'); return; }
+    toast('success', 'Request Sent!', 'The team lead will be notified instantly.');
+    closeModal();
+    await loadMyStatus();
+  } catch(e) {
+    toast('error', 'Network Error', 'Check your connection');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('modal-btn-text').style.display = 'inline';
+    document.getElementById('modal-spinner').style.display = 'none';
+  }
+}
+
+async function cancelRequest(id) {
+  const btn = document.querySelector(`button[onclick="cancelRequest(${id})"]`);
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/teams/request/${id}/cancel`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      toast('info', 'Request Cancelled', 'You can now send a new request.');
+      await loadMyStatus();
+    }
+  } catch(e) { toast('error', 'Failed', 'Could not cancel request.'); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function toast(type, title, msg) {
+  const icons = { success: 'OK', error: 'ERR', info: 'INFO', warning: 'WARN' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'INFO'}</span>
+    <div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 5000);
+}
+
+function logout() { localStorage.clear(); window.location.href = '/'; }
+
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = saved === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+// Click outside modal to close
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadMe();
+loadCoursesOnce();
+loadMyStatus();
+connectWS();
+setInterval(() => { loadMyStatus(); }, 30000);
+</script>
+</body>
+</html>

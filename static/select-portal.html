@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Portal · Select Portal</title>
+  <meta name="description" content="Choose which section portal you want to access."/>
+  <link rel="stylesheet" href="/static/style.css?v=13"/>
+  <style>
+    .selector-wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
+    .selector-title { font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:1.35rem; color:var(--text-1); }
+    .selector-sub { margin-top:6px; color:var(--text-3); font-size:0.92rem; }
+    .option-grid { display:grid; grid-template-columns: 1fr; gap: 12px; margin-top: 18px; }
+    .portal-option {
+      display:flex; align-items:center; justify-content:space-between; gap: 12px;
+      padding: 14px 14px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: rgba(255,255,255,0.04);
+      cursor:pointer; transition: transform .12s ease, border-color .12s ease, background .12s ease;
+    }
+    .portal-option:hover { transform: translateY(-1px); border-color: var(--violet); background: rgba(255,255,255,0.06); }
+    .opt-left { min-width: 0; }
+    .opt-course { font-size:0.78rem; color:var(--text-3); }
+    .opt-sec { font-size:1.02rem; font-weight:700; color:var(--text-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .opt-badges { display:flex; gap: 8px; align-items:center; }
+    .opt-badge {
+      padding: 4px 10px; border-radius: 999px; font-size:0.78rem; font-weight:700;
+      border: 1px solid var(--border-subtle); color: var(--text-2); background: rgba(255,255,255,0.03);
+      text-transform: uppercase; letter-spacing: .8px;
+    }
+    .opt-badge.lead { border-color: rgba(139,92,246,0.35); background: rgba(139,92,246,0.18); color: var(--violet-light); }
+    .opt-badge.member { border-color: rgba(245,158,11,0.28); background: rgba(245,158,11,0.12); color: var(--amber); }
+    .opt-arrow { color: var(--text-3); font-weight: 900; }
+  </style>
+</head>
+<body>
+<div class="bg-anim">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<div class="page-wrapper auth-page">
+  <div class="glass glass-glow auth-card selector-wrap">
+    <div class="selector-title">Which portal would you like to access?</div>
+    <div class="selector-sub">Choose a section. We’ll open the correct portal based on your role in that section.</div>
+    <div class="option-grid" id="options"></div>
+    <div class="auth-footer" style="margin-top:14px;">
+      Not you? <a href="#" onclick="logout()" style="color:var(--violet-light)">Sign out</a>
+    </div>
+  </div>
+</div>
+
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+  const API = window.__portalApiBase();
+  const token = localStorage.getItem('token');
+  if (!token) window.location.href = '/';
+
+  function logout() { localStorage.clear(); window.location.href = '/'; }
+
+  function readOptions() {
+    try { return JSON.parse(localStorage.getItem('portal_options') || '[]'); }
+    catch (_) { return []; }
+  }
+
+  async function fetchOptionsIfNeeded() {
+    const cached = readOptions();
+    if (cached && cached.length) return cached;
+    // Fallback: derive options from backend.
+    const res = await fetch(`${API}/api/teams/my-sections`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) return [];
+    return (data.sections || []).map(s => ({
+      section_id: s.section_id,
+      section_name: s.section_name,
+      course_name: s.course_name,
+      role: s.role,
+      portal: s.role === 'lead' ? '/lead' : '/member',
+    }));
+  }
+
+  function choose(opt) {
+    if (!opt || !opt.section_id) return;
+    localStorage.setItem('default_section', String(opt.section_id));
+    localStorage.setItem('active_section_role', String(opt.role || 'member'));
+    window.location.href = `${opt.portal}`;
+  }
+
+  function render(options) {
+    const el = document.getElementById('options');
+    if (!options || options.length === 0) {
+      el.innerHTML = `<div class="empty-state">
+        <div class="empty-icon">--</div>
+        <div class="empty-title">No sections found</div>
+        <div class="empty-desc">You don’t seem to be enrolled in any sections.</div>
+      </div>`;
+      return;
+    }
+    options.sort((a,b) => (a.course_name || '').localeCompare(b.course_name || '') || (a.section_name || '').localeCompare(b.section_name || ''));
+    el.innerHTML = options.map(o => `
+      <div class="portal-option" onclick='choose(${JSON.stringify(o).replace(/'/g, "&apos;")})'>
+        <div class="opt-left">
+          <div class="opt-course">${o.course_name || ''}</div>
+          <div class="opt-sec">${o.section_name || ('Section ' + o.section_id)}</div>
+        </div>
+        <div class="opt-badges">
+          <span class="opt-badge ${String(o.role).toLowerCase()}">${o.role}</span>
+          <span class="opt-arrow">→</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  (async () => {
+    const options = await fetchOptionsIfNeeded();
+    render(options);
+  })();
+</script>
+</body>
+</html>
+

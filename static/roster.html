@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Portal · Roster Sheet</title>
+  <link rel="stylesheet" href="/static/style.css?v=14"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/index.min.js"></script>
+  <script src="https://bossanova.uk/jspreadsheet/v4/formula.js"></script>
+  <!-- XLSX export (adds formatting not possible in CSV) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    .roster-page { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Toolbar ── */
+    .roster-toolbar {
+      flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 24px; background: rgba(5,8,22,0.92);
+      border-bottom: 1px solid var(--border-subtle); backdrop-filter: blur(20px);
+      z-index: 50; gap: 12px; flex-wrap: wrap;
+    }
+    .toolbar-left  { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .toolbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .toolbar-title { min-width: 0; }
+    .toolbar-title h1 { font-size: 1rem; font-weight: 700; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+    .toolbar-title small { font-size: 0.76rem; color: var(--text-3); }
+    .save-bar { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; color: var(--text-3); }
+    .save-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); transition: background .3s; }
+    .save-dot.saving { background: var(--amber); animation: pulse 1s infinite; }
+    .save-dot.error  { background: var(--red); }
+
+    /* ── Sheet container ── */
+    .sheet-wrap { flex: 1; overflow: auto; position: relative; }
+
+    /* ── Jspreadsheet glassmorphism polish ── */
+    .jexcel_container { background: transparent; }
+    .jexcel_content { background: rgba(10,16,40,0.35); backdrop-filter: blur(18px); border: 1px solid var(--border-subtle); border-radius: 14px; overflow: hidden; }
+    .jexcel thead tr td {
+      background: linear-gradient(180deg, rgba(10,16,40,0.98), rgba(10,16,40,0.90)) !important;
+      color: rgba(240,243,255,0.92) !important;
+      border-bottom: 1px solid rgba(255,255,255,0.12) !important;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      font-size: 0.72rem;
+      font-weight: 900;
+      padding: 12px 14px !important;
+    }
+    .jexcel tbody tr td {
+      background: transparent !important;
+      color: var(--text-2) !important;
+      border-color: rgba(255,255,255,0.06) !important;
+      padding: 10px 12px !important;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.25;
+    }
+    .jexcel tbody tr:hover td { background: rgba(255,255,255,0.03) !important; }
+    .jexcel td.readonly { color: var(--text-3) !important; }
+    .jexcel td.changed { outline: 2px solid rgba(245,158,11,.65) !important; }
+    .jexcel tr.sheet-team-header td {
+      background: rgba(139,92,246,0.16) !important;
+      color: var(--violet-light) !important;
+      font-weight: 800 !important;
+      border-top: 2px solid rgba(139,92,246,0.55) !important;
+      border-bottom: 1px solid rgba(139,92,246,0.35) !important;
+      white-space: normal !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+    }
+    .jexcel tr.sheet-team-header td:first-child { background: rgba(139,92,246,0.16) !important; }
+    .jexcel tr.sheet-team-header td.readonly { color: var(--violet-light) !important; }
+    .jexcel tr.sheet-lead-row td {
+      background: rgba(255,255,255,0.03) !important;
+      color: var(--text-2) !important;
+      font-weight: 650 !important;
+    }
+    .jexcel tr.sheet-team-spacer td {
+      height: 18px !important;
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+    }
+
+    /* ── Table ── */
+    .sheet-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; min-width: 900px; }
+    .sheet-table thead tr { position: sticky; top: 0; z-index: 20; }
+    .sheet-table th {
+      background: rgba(10,16,40,0.98); color: var(--text-3); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px; font-size: 0.72rem;
+      padding: 11px 14px; text-align: left; border-bottom: 2px solid var(--border);
+      white-space: nowrap; user-select: none;
+    }
+    .sheet-table td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-2); vertical-align: middle; }
+    .th-num, .td-num { width: 48px; text-align: center; color: var(--text-3); font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── Team group header ── */
+    .team-group-row td {
+      background: linear-gradient(90deg, rgba(139,92,246,0.22), rgba(139,92,246,0.06));
+      color: var(--violet-light); font-weight: 700; padding: 9px 14px;
+      border-top: 2px solid rgba(139,92,246,0.5); border-bottom: 1px solid rgba(139,92,246,0.3);
+      font-size: 0.84rem; letter-spacing: 0.2px;
+    }
+    .team-group-row.t1 td { background: linear-gradient(90deg,rgba(139,92,246,.22),rgba(139,92,246,.04)); border-top-color: rgba(139,92,246,.5); }
+    .team-group-row.t2 td { background: linear-gradient(90deg,rgba(245,158,11,.18),rgba(245,158,11,.04)); border-top-color: rgba(245,158,11,.5); color: var(--amber); }
+    .team-group-row.t3 td { background: linear-gradient(90deg,rgba(34,197,94,.16),rgba(34,197,94,.04));  border-top-color: rgba(34,197,94,.5);  color: var(--emerald); }
+    .team-group-row.t4 td { background: linear-gradient(90deg,rgba(239,68,68,.16),rgba(239,68,68,.04));  border-top-color: rgba(239,68,68,.5);  color: var(--red); }
+    .team-group-meta { font-size: 0.76rem; opacity: 0.7; font-weight: 400; margin-left: 10px; }
+
+    /* ── Lead row ── */
+    .lead-row td { background: rgba(139,92,246,0.05); }
+    .member-row:hover td, .lead-row:hover td { background: rgba(255,255,255,0.03); }
+
+    /* ── Role badge ── */
+    .role-badge { padding: 2px 9px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; }
+    /* High-contrast tags per requirement */
+    .role-lead   { background: rgba(16,185,129,.92); color: #ffffff; border: 1px solid rgba(16,185,129,1); }
+    .role-member { background: rgba(51,65,85,.92); color: #ffffff; border: 1px solid rgba(148,163,184,.55); }
+
+    /* ── Status pill ── */
+    .status-pill { padding: 2px 9px; border-radius: 99px; font-size: 0.72rem; font-weight: 600; }
+    .status-active   { background: rgba(34,197,94,.16); color: var(--emerald); border: 1px solid rgba(34,197,94,.3); }
+    .status-accepted { background: rgba(34,197,94,.16); color: var(--emerald); border: 1px solid rgba(34,197,94,.3); }
+
+    /* ── Editable cells ── */
+    [contenteditable="true"] { border-radius: 6px; outline: none; cursor: text; transition: background .15s, box-shadow .15s; min-width: 80px; display: block; }
+    [contenteditable="true"]:hover { background: rgba(139,92,246,.1); }
+    [contenteditable="true"]:focus { background: rgba(139,92,246,.18); box-shadow: 0 0 0 2px rgba(139,92,246,.55); }
+    [contenteditable="true"].saving { box-shadow: 0 0 0 2px var(--amber); opacity: .7; }
+    [contenteditable="true"].saved  { box-shadow: 0 0 0 2px var(--emerald); }
+    [contenteditable="true"].err    { box-shadow: 0 0 0 2px var(--red); }
+    .non-edit { color: var(--text-3); font-style: italic; font-size: 0.8rem; }
+
+    /* ── Empty / loading ── */
+    .sheet-empty { text-align: center; padding: 80px 24px; color: var(--text-3); font-size: 0.9rem; }
+
+    /* ── Info bar ── */
+    .info-bar {
+      flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 8px 24px;
+      background: rgba(10,16,40,0.6); border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.78rem; color: var(--text-3); flex-wrap: wrap;
+    }
+    .info-chip { background: rgba(255,255,255,.05); border: 1px solid var(--border-subtle); border-radius: 20px; padding: 3px 10px; }
+
+    /* ── Print ── */
+    @media print {
+      .roster-toolbar, .info-bar { display: none !important; }
+      #toast-container { display: none !important; }
+      html, body { overflow: visible; height: auto; }
+      .roster-page { height: auto; }
+      .sheet-wrap  { overflow: visible; }
+      /* Jspreadsheet print-fit */
+      .jexcel_content { width: 100% !important; }
+      body.printing .jexcel_content {
+        transform: scale(var(--print-scale, 1));
+        transform-origin: top left;
+      }
+      html, body, .jexcel_content, .jexcel thead tr td, .jexcel tbody tr td {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .team-group-row td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* Ensure crisp grid boundaries in PDF exports */
+      .jexcel td, .jexcel th, .jexcel thead tr td, .jexcel tbody tr td {
+        border: 1px solid #000 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .jexcel table { table-layout: fixed !important; width: 100% !important; }
+      /* Keep visible spacing between teams in PDF */
+      .jexcel tr.sheet-team-spacer td { border: none !important; height: 18px !important; }
+    }
+
+    /* ── Sheet sync feedback ── */
+    .sheet-flash-ok  { animation: sheetFlashOk 0.85s ease; }
+    .sheet-flash-err { animation: sheetFlashErr 1.05s ease; }
+    @keyframes sheetFlashOk  { 0%{ background: rgba(34,197,94,.28);} 100%{ background: transparent; } }
+    @keyframes sheetFlashErr { 0%{ background: rgba(239,68,68,.25);} 100%{ background: transparent; } }
+
+    .team-badge {
+      display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;
+    }
+    .team-badge .pill {
+      display:inline-flex; align-items:center;
+      padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 800;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: var(--text-2);
+    }
+    .team-badge .pill.lead {
+      background: rgba(139,92,246,.22); color: #b794ff; border-color: rgba(139,92,246,.4);
+    }
+    .team-badge .pill.count {
+      background: rgba(34,197,94,.16); color: var(--emerald); border-color: rgba(34,197,94,.28);
+    }
+
+    /* Team header branding inside sheet header row */
+    .team-badge .team-name {
+      font-weight: 900;
+      background: linear-gradient(90deg, rgba(139,92,246,1), rgba(34,197,94,1));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      letter-spacing: 0.2px;
+    }
+    .team-badge .meta {
+      opacity: 0.78;
+      font-weight: 750;
+      color: var(--text-2);
+    }
+  </style>
+</head>
+<body>
+<div class="bg-anim"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+
+<div class="page-wrapper roster-page">
+
+  <!-- Toolbar -->
+  <div class="roster-toolbar">
+    <div class="toolbar-left">
+      <button class="btn btn-ghost btn-sm" onclick="history.back()">← Back</button>
+      <div class="toolbar-title">
+        <h1 id="toolbar-title">Loading roster…</h1>
+        <small id="toolbar-sub"></small>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <div class="save-bar">
+        <div class="save-dot" id="save-dot"></div>
+        <span id="save-label">All changes saved</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="refreshRoster()">↻ Refresh</button>
+      <button class="btn btn-success btn-sm" onclick="downloadCSV()" id="csv-btn">↓ CSV</button>
+      <button class="btn btn-success btn-sm" onclick="downloadXLSX()" id="xlsx-btn">↓ Excel</button>
+      <button class="btn btn-primary btn-sm" onclick="exportPDF()">⎙ PDF</button>
+      <button class="btn btn-ghost btn-sm" id="btn-add-col" style="display:none" onclick="addDynamicColumn()">+ Column</button>
+      <button class="btn btn-ghost btn-sm" id="btn-del-col" style="display:none" onclick="removeDynamicColumn()">− Column</button>
+      <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle-btn">Light</button>
+    </div>
+  </div>
+
+  <!-- Info bar -->
+  <div class="info-bar" id="info-bar" style="display:none">
+    <span class="info-chip" id="info-course"></span>
+    <span class="info-chip" id="info-section"></span>
+    <span class="info-chip" id="info-count"></span>
+    <span class="info-chip" id="info-teams"></span>
+    <span id="edit-hint" style="margin-left:auto; color:var(--text-3); font-size:0.72rem;">Click Name or Student ID cells to edit · Enter or Tab to save · Esc to cancel</span>
+  </div>
+
+  <!-- Spreadsheet -->
+  <div class="sheet-wrap">
+    <div id="roster-sheet" style="min-width: 980px; padding: 18px;"></div>
+  </div>
+
+</div>
+<div id="toast-container"></div>
+
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+  initTheme();
+  const API = window.__portalApiBase();
+  const token = localStorage.getItem('token');
+  const params = new URLSearchParams(location.search);
+  const sectionId = parseInt(params.get('section_id') || '0');
+  // Role is trusted from session; URL role is only allowed to narrow scope for admin tooling.
+  const storedRole = localStorage.getItem('role') || 'member';
+  const paramRole = params.get('role');
+  // URL role can only NARROW privileges (never escalate).
+  // - admin may choose admin/lead/member views
+  // - lead may choose lead/member views (read-only member view is allowed)
+  // - member stays member
+  const role = (
+    storedRole === 'admin' && (paramRole === 'admin' || paramRole === 'lead' || paramRole === 'member')
+  ) ? paramRole : (
+    storedRole === 'lead' && paramRole === 'member'
+  ) ? 'member' : storedRole;
+
+  if (!token || !sectionId) { location.href = '/'; }
+
+  let rosterData = null;
+  let rosterWS = null;
+
+  // ── Load ─────────────────────────────────────────────────────────────────
+  async function loadRoster() {
+    // Use roster-sheet payload (role-gated server-side); keeps UI consistent across admin/lead/member.
+    try {
+      const res = await fetch(API + `/api/roster/sheet/${sectionId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { location.href = '/'; return; }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Load failed');
+      rosterData = data;
+      renderSheet(data);
+    } catch (e) { toast('error', 'Load Failed', e.message); }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderSheet(data) {
+    document.title = `Roster · ${data.section_name} · ${data.course_name}`;
+    document.getElementById('toolbar-title').textContent = `${data.course_name} — Section ${data.section_name}`;
+    document.getElementById('toolbar-sub').textContent = `${data.roster.length} records`;
+
+    // Group by team, preserving order
+    const teamMap = new Map();
+    data.roster.forEach(r => {
+      if (!teamMap.has(r.team_name)) teamMap.set(r.team_name, []);
+      teamMap.get(r.team_name).push(r);
+    });
+
+    const teamColors = ['t1','t2','t3','t4','t1','t2','t3','t4'];
+    let html = ''; let rowNum = 0; let tIdx = 0;
+    const canEditLead = role === 'admin';
+    const limit = parseInt(data.team_size_limit || '0') || null;
+
+    teamMap.forEach((members, teamName) => {
+      const memberCount = members.filter(m => m.role === 'Member').length;
+      const peopleCount = members.length; // includes Lead row
+      const lead = members.find(m => m.role === 'Lead');
+      const tc = teamColors[tIdx % teamColors.length]; tIdx++;
+      const isFull = limit ? (peopleCount >= limit) : false;
+
+      html += `<tr class="team-group-row ${tc}">
+        <td colspan="7">
+          ▶ ${esc(teamName)}
+          <span class="team-group-meta">· ${limit ? `${peopleCount}/${limit} people${isFull ? ' · Full' : ''}` : `${peopleCount} people`} · ${memberCount} members${lead ? ' · Lead: ' + esc(lead.name) : ''}</span>
+        </td></tr>`;
+
+      members.forEach(r => {
+        rowNum++;
+        const isLead = r.role === 'Lead';
+        const editName = canEditLead || !isLead;
+        const editSid  = !isLead;
+
+        html += `<tr class="${isLead ? 'lead-row' : 'member-row'}" data-uid="${r.user_id}">
+          <td class="td-num">${rowNum}</td>
+          <td><span class="role-badge ${isLead ? 'role-lead' : 'role-member'}">${r.role}</span></td>
+          <td>${editName
+            ? `<div contenteditable="true" data-field="name" data-uid="${r.user_id}" data-orig="${esc(r.name||'')}"
+                 onkeydown="cellKey(event,this)" onfocus="cellFocus(this)" onblur="cellBlur(this)">${esc(r.name||'')}</div>`
+            : `<div class="non-edit">${esc(r.name||'')}</div>`}</td>
+          <td>${editSid
+            ? `<div contenteditable="true" data-field="student_id" data-uid="${r.user_id}" data-orig="${esc(r.student_id||'')}"
+                 onkeydown="cellKey(event,this)" onfocus="cellFocus(this)" onblur="cellBlur(this)" style="font-family:'JetBrains Mono',monospace;font-size:.83rem">${esc(r.student_id||'')}</div>`
+            : `<div class="non-edit">—</div>`}</td>
+          <td style="font-size:.82rem;color:var(--text-3)">${esc(r.email||'')}</td>
+          <td style="font-size:.8rem;color:var(--text-3)">${esc(teamName)}</td>
+          <td><span class="status-pill ${isLead ? 'status-active' : 'status-accepted'}">${r.status}</span></td>
+        </tr>`;
+      });
+    });
+
+    if (!html) html = `<tr><td colspan="7" class="sheet-empty">No members enrolled in this section yet.</td></tr>`;
+    document.getElementById('sheet-body').innerHTML = html;
+
+    // Info bar
+    const ib = document.getElementById('info-bar'); ib.style.display = 'flex';
+    document.getElementById('info-course').textContent  = `📘 ${data.course_name}`;
+    document.getElementById('info-section').textContent = `📍 Section ${data.section_name}`;
+    document.getElementById('info-count').textContent   = `👥 ${data.roster.length} members`;
+    document.getElementById('info-teams').textContent   = `🏆 ${teamMap.size} teams`;
+  }
+
+  // ── Cell editing ──────────────────────────────────────────────────────────
+  function cellFocus(el) { el.dataset.orig = el.innerText.trim(); }
+
+  function cellKey(e, el) {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { el.innerText = el.dataset.orig; el.blur(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const all = [...document.querySelectorAll('[contenteditable="true"]')];
+      const i = all.indexOf(el);
+      const next = all[e.shiftKey ? i - 1 : i + 1];
+      if (next) next.focus();
+    }
+  }
+
+  function cellBlur(el) {
+    const val = el.innerText.trim();
+    if (val === el.dataset.orig) return; // no change
+    saveCell(el, val);
+  }
+
+  async function saveCell(el, val) {
+    const uid = parseInt(el.dataset.uid);
+    const field = el.dataset.field;
+    const ep = role === 'admin'
+      ? `/api/admin/roster/member/${uid}`
+      : `/api/teams/roster/member/${uid}`;
+
+    el.classList.add('saving');
+    setSaveDot('saving');
+
+    try {
+      const res = await fetch(API + ep, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: val })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Save failed');
+      el.classList.remove('saving'); el.classList.add('saved');
+      el.dataset.orig = val;
+      setSaveDot('ok');
+      setTimeout(() => { el.classList.remove('saved'); setSaveDot('ok'); }, 1800);
+    } catch (e) {
+      el.classList.remove('saving'); el.classList.add('err');
+      el.innerText = el.dataset.orig;
+      setSaveDot('err');
+      toast('error', 'Save Failed', e.message);
+      setTimeout(() => { el.classList.remove('err'); setSaveDot('ok'); }, 3000);
+    }
+  }
+
+  function setSaveDot(state) {
+    const dot = document.getElementById('save-dot');
+    const lbl = document.getElementById('save-label');
+    dot.className = 'save-dot';
+    if (state === 'saving') { dot.classList.add('saving'); lbl.textContent = 'Saving…'; }
+    else if (state === 'err') { dot.classList.add('error'); lbl.textContent = 'Save failed'; }
+    else { lbl.textContent = 'All changes saved'; }
+  }
+
+  // ── CSV download (fetch + Blob — no token in URL) ─────────────────────────
+  function downloadCSV() {
+    if (!rosterData) return;
+    const BOM = '\uFEFF';
+    const cols = ['#','Role','Name','Student ID','Email','Team','Status'];
+    const rows = [cols];
+
+    const teamMap = new Map();
+    rosterData.roster.forEach(r => {
+      if (!teamMap.has(r.team_name)) teamMap.set(r.team_name, []);
+      teamMap.get(r.team_name).push(r);
+    });
+
+    let n = 0;
+    teamMap.forEach((members, teamName) => {
+      rows.push([`--- ${teamName} ---`, '', '', '', '', '', '']);
+      members.forEach(r => {
+        n++;
+        // Pull live DOM values (includes any unsaved edits user might have)
+        const row = document.querySelector(`tr[data-uid="${r.user_id}"]`);
+        const nameEl = row?.querySelector('[data-field="name"]');
+        const sidEl  = row?.querySelector('[data-field="student_id"]');
+        rows.push([
+          n, r.role,
+          nameEl ? nameEl.innerText.trim() : (r.name || ''),
+          sidEl  ? sidEl.innerText.trim()  : (r.student_id || ''),
+          r.email || '', teamName, r.status || ''
+        ]);
+      });
+    });
+
+    const csv = BOM + rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `Roster_${rosterData.course_name}_${rosterData.section_name}.csv`.replace(/[^\w.-]/g, '_');
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('success', 'CSV Downloaded', 'Roster exported with all data.');
+  }
+
+  // ── PDF via print ─────────────────────────────────────────────────────────
+  function exportPDF() { window.print(); }
+
+  // ── Refresh ───────────────────────────────────────────────────────────────
+  function refreshRoster() { loadRoster(); toast('info', 'Refreshed', 'Roster data reloaded.'); }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function toast(type, title, msg) {
+    const icons = { success:'✓', error:'✕', info:'i', warning:'!' };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="toast-icon">${icons[type]||'i'}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => { el.style.animation = 'fadeOut .3s ease forwards'; setTimeout(() => el.remove(), 300); }, 4000);
+  }
+
+  function initTheme() {
+    const t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    const b = document.getElementById('theme-toggle-btn');
+    if (b) b.textContent = t === 'dark' ? 'Light' : 'Dark';
+  }
+
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    const b = document.getElementById('theme-toggle-btn');
+    if (b) b.textContent = next === 'dark' ? 'Light' : 'Dark';
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  window.onload = () => {
+    loadRoster();
+    connectRosterWS();
+    setInterval(loadRoster, 120000); // Fallback refresh; WS already triggers reloads
+  };
+
+  function decodeJwtSub(tok) {
+    try {
+      const part = tok.split('.')[1];
+      if (!part) return null;
+      const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+      const json = decodeURIComponent(atob(b64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      const payload = JSON.parse(json);
+      const sub = payload?.sub;
+      if (sub == null) return null;
+      const n = parseInt(sub);
+      return Number.isFinite(n) ? n : null;
+    } catch (_) { return null; }
+  }
+
+  function connectRosterWS() {
+    try {
+      const uid = decodeJwtSub(token);
+      if (!uid) return;
+      if (rosterWS && (rosterWS.readyState === WebSocket.OPEN || rosterWS.readyState === WebSocket.CONNECTING)) return;
+
+      rosterWS = new WebSocket(window.__portalWsUrl(uid, token));
+
+      rosterWS.onopen = () => {};
+      rosterWS.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data || '{}');
+          const event = msg.event;
+          // Any team membership changes should reflect immediately in roster sheet.
+          if (event === 'team_updated' || event === 'admin_team_activity' || event === 'removed_from_team' || event === 'request_accepted' || event === 'request_cancelled') {
+            loadRoster();
+          }
+        } catch (_) {}
+      };
+      rosterWS.onclose = () => {
+        // Reconnect with a small backoff
+        setTimeout(connectRosterWS, 1200);
+      };
+    } catch (_) {}
+  }
+</script>
+
+<script>
+  // ── Jspreadsheet-powered roster (append-only overrides) ────────────────────
+  let rosterSheet = null;
+  let isApplyingRemote = false;
+  let editContext = null; // { x, y, oldValue }
+
+  // Surface JS errors to the UI toast so admin can report them.
+  window.addEventListener('error', (ev) => {
+    try { toast('error', 'JS Error', ev?.error?.message || ev?.message || 'Unknown'); } catch (_) {}
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    try { toast('error', 'JS Error', ev?.reason?.message || String(ev?.reason || '')); } catch (_) {}
+  });
+
+  // persistDynamicColumnConfig replaced by saveColumnConfigToServer + addDynamicColumn/removeDynamicColumn
+
+  function applyPrintScale() {
+    try {
+      const content = document.querySelector('.jexcel_content');
+      if (!content) return;
+      const gridWidth = Math.max(content.scrollWidth || 0, content.getBoundingClientRect().width || 0);
+      const available = Math.max(320, (document.documentElement.clientWidth || 1024) - 24);
+      const scale = gridWidth > available ? (available / gridWidth) : 1;
+      document.documentElement.style.setProperty('--print-scale', String(Math.max(0.35, Math.min(1, scale))));
+    } catch (_) {}
+  }
+
+  window.addEventListener('beforeprint', () => {
+    document.body.classList.add('printing');
+    applyPrintScale();
+  });
+  window.addEventListener('afterprint', () => {
+    document.body.classList.remove('printing');
+    document.documentElement.style.removeProperty('--print-scale');
+  });
+
+  // hidden meta columns (keep row→membership mapping without changing visible format)
+  const META_COLS = [
+    { key: '_membership_id', title: '_mid', width: 1, type: 'text', readOnly: true },
+    { key: '_team_id', title: '_tid', width: 1, type: 'text', readOnly: true },
+    { key: '_row_type', title: '_type', width: 1, type: 'text', readOnly: true },
+    { key: '_team_color', title: '_tc', width: 1, type: 'text', readOnly: true },
+  ];
+
+  function rosterSheetEndpoint() {
+    // single endpoint for both admin and lead (auth-gated server-side)
+    return `/api/roster/sheet/${sectionId}`;
+  }
+
+  // Column order requirement:
+  // Team → Name → Role → Student ID → Email (keep row # and hidden meta columns intact)
+  const BASE_COLS = [
+    { key: 'row_num',     title: '#', width: 60, type: 'numeric', readOnly: true },
+    { key: 'team_name',   title: 'TEAM', width: 320, type: 'text', readOnly: true },
+    { key: 'name',        title: 'NAME', width: 260, type: 'text' },
+    { key: 'role',        title: 'ROLE', width: 110, type: 'text', readOnly: true },
+    { key: 'student_id',  title: 'STUDENT ID', width: 150, type: 'text' },
+    { key: 'email',       title: 'EMAIL', width: 240, type: 'text', readOnly: true },
+  ];
+
+  const DEFAULT_COLUMN_CONFIG = [];
+
+  function normalizeColumnConfig(cfg) {
+    if (!Array.isArray(cfg)) return [];
+    return cfg.map((c, i) => ({
+      key: String(c.key || `col_${i}`),
+      // jspreadsheet uses `name` internally; keep `key` for our backend sync
+      name: String(c.key || `col_${i}`),
+      title: String(c.title || c.key || `Column ${i + 1}`),
+      type: c.type || 'text',
+      width: c.width || 140,
+      readOnly: !!c.readOnly,
+      mask: c.mask,
+      decimal: c.decimal,
+      isComputed: !!c.isComputed,
+    }));
+  }
+
+  function getSheetColumnKey(instance, x) {
+    const col = instance?.options?.columns?.[x];
+    if (!col) return null;
+    return col.key || col.name || null;
+  }
+
+  function buildColumnsFromConfig(columnConfig) {
+    const isAdmin = role === 'admin';
+    const isMemberView = role === 'member';
+    const dynamicCols = normalizeColumnConfig(columnConfig);
+    const cols = [...META_COLS, ...BASE_COLS, ...dynamicCols].map(c => {
+      const col = { ...c };
+      if (!col.name && col.key) col.name = col.key;
+      if (col.mask) col.mask = col.mask;
+      if (col.decimal) col.decimal = col.decimal;
+      return col;
+    });
+
+    // Admin edits NAME + STUDENT ID for Member rows; Leads only edit dynamic cols (extra_data).
+    cols.forEach(c => {
+      if (META_COLS.some(m => m.key === c.key)) c.readOnly = true;
+    });
+    if (isMemberView) {
+      cols.forEach(c => { c.readOnly = true; });
+    } else if (!isAdmin) {
+      cols.forEach(c => {
+        if (BASE_COLS.some(b => b.key === c.key)) c.readOnly = true;
+      });
+    } else {
+      // Admin can only edit: name, student_id (memberships rows only; we guard at runtime)
+      cols.forEach(c => {
+        if (c.key === 'name' || c.key === 'student_id') c.readOnly = false;
+      });
+    }
+    return cols;
+  }
+
+  function sheetColIndexForKey(key) {
+    const cols = rosterSheet?.options?.columns || [];
+    for (let i = 0; i < cols.length; i++) {
+      const k = cols[i]?.key || cols[i]?.name;
+      if (k === key) return i;
+    }
+    return -1;
+  }
+
+  function hideMetaColumns() {
+    // META_COLS are always the first columns in our sheet model.
+    try { rosterSheet?.hideColumn?.([0, 1, 2, 3]); } catch (_) {}
+  }
+
+  function autoSizeVisibleColumns() {
+    try {
+      const colCount = (rosterSheet?.options?.columns || []).length;
+      const idxs = [];
+      for (let i = META_COLS.length; i < colCount; i++) idxs.push(i);
+      // Jspreadsheet CE v4 supports autoWidth; this keeps layout readable without changing data.
+      rosterSheet?.autoWidth?.(idxs);
+    } catch (_) {}
+  }
+
+  // Override existing loadRoster to use roster-sheet payload
+  window.loadRoster = async function loadRosterSheet() {
+    try {
+      const res = await fetch(API + rosterSheetEndpoint(), { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { location.href = '/'; return; }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Load failed');
+      rosterData = data;
+      window.renderSheet(data);
+    } catch (e) { toast('error', 'Load Failed', e.message); }
+  };
+
+  // Override existing renderSheet to render Jspreadsheet
+  window.renderSheet = function renderRosterSpreadsheet(data) {
+    document.title = `Roster · ${data.section_name} · ${data.course_name}`;
+    document.getElementById('toolbar-title').textContent = `${data.course_name} — Section ${data.section_name}`;
+    document.getElementById('toolbar-sub').textContent = `${(data.roster || []).length} records`;
+
+    const ib = document.getElementById('info-bar'); ib.style.display = 'flex';
+    // Member view is strictly read-only.
+    const hint = document.getElementById('edit-hint');
+    if (hint) {
+      hint.textContent = role === 'member' ? 'Read-only view (your team only)' : 'Click cells to edit · Enter or Tab to save · Esc to cancel';
+    }
+    document.getElementById('info-course').textContent  = `📘 ${data.course_name}`;
+    document.getElementById('info-section').textContent = `📍 Section ${data.section_name}`;
+    document.getElementById('info-count').textContent   = `👥 ${(data.roster || []).length} students`;
+    document.getElementById('info-teams').textContent   = `🏆 ${new Set((data.roster || []).map(r => r.team_name)).size} teams`;
+
+    const serverCfg = (data.column_config && data.column_config.length) ? data.column_config : DEFAULT_COLUMN_CONFIG;
+    const columns = buildColumnsFromConfig(serverCfg);
+
+    const teams = Array.isArray(data.teams) ? data.teams.slice() : [];
+    const allRows = Array.isArray(data.roster) ? data.roster.slice() : [];
+    // Preserve server ordering for teams; add display color classes in cycle.
+    const rows = [];
+    const teamColors = ['t1','t2','t3','t4','t1','t2','t3','t4'];
+    const byTeamId = new Map();
+    allRows.forEach(r => {
+      const tid = r.team_id || 0;
+      if (!byTeamId.has(tid)) byTeamId.set(tid, []);
+      byTeamId.get(tid).push(r);
+    });
+
+    teams.forEach((t, idx) => {
+      // Per-team numbering (Lead + Members): 1..team_size_limit
+      let teamCounter = 0;
+      const tc = teamColors[idx % teamColors.length];
+      const teamName = t.team_name || '—';
+      const leadName = t.lead_name || '—';
+      const accepted = parseInt(t.accepted_count || '0') || 0;
+      const slots = parseInt(t.member_slots || data.member_slots || (parseInt(data.team_size_limit || '4') - 1) || 0) || 0;
+
+      // EXACT legacy header formatting (matches screenshot)
+      const headerText = `▶ ${teamName}  ·  ${accepted}/${slots} members  ·  Lead: ${leadName}`;
+
+      // Header row (rendered across)
+      // Put the header text in TEAM column so NAME stays clean.
+      rows.push(['', t.team_id || '', 'header', tc, '', headerText, '', '', '', '', ...serverCfg.map(() => '')]);
+
+      // Team rows: lead then members from server
+      const teamRows = byTeamId.get(t.team_id || 0) || [];
+      teamRows.forEach((r) => {
+        teamCounter++;
+        const isPatchable = !!r.membership_id;
+        const extra = r.extra_data || {};
+        const dynValues = serverCfg.map(c => (extra[String(c.key || '')] ?? ''));
+        rows.push([
+          String(r.membership_id || ''), String(r.team_id || ''),
+          isPatchable ? 'member' : 'lead', tc,
+          teamCounter,
+          r.team_name || teamName,
+          r.name || '',
+          r.role || '',
+          r.student_id || '',
+          r.email || '',
+          ...dynValues
+        ]);
+      });
+
+      // Add spacing between teams (requested: two blank rows)
+      const blank = new Array(serverCfg.length).fill('');
+      rows.push(['', t.team_id || '', 'spacer', tc, '', '', '', '', '', '', ...blank]);
+      rows.push(['', t.team_id || '', 'spacer', tc, '', '', '', '', '', '', ...blank]);
+    });
+
+    const wrap = document.getElementById('roster-sheet');
+    wrap.innerHTML = '';
+    rosterSheet = jspreadsheet(wrap, {
+      data: rows,
+      columns,
+      minDimensions: [columns.length, Math.max(rows.length, 8)],
+      columnDrag: false,
+      rowDrag: false,
+      allowInsertRow: false,
+      allowDeleteRow: false,
+      allowRenameColumn: false,
+      allowInsertColumn: false,
+      allowDeleteColumn: false,
+      tableOverflow: true,
+      tableWidth: '100%',
+      license: 'free',
+      formulas: true,
+      oneditionstart: onEditionStart,
+      oneditionend: onEditionEnd,
+      onchangeheader: onChangeHeader,
+      updateTable: onUpdateTable,
+    });
+
+    hideMetaColumns();
+    autoSizeVisibleColumns();
+
+    // Show admin column management buttons
+    const addBtn = document.getElementById('btn-add-col');
+    const delBtn = document.getElementById('btn-del-col');
+    if (role === 'admin') {
+      if (addBtn) addBtn.style.display = '';
+      if (delBtn) delBtn.style.display = serverCfg.length > 0 ? '' : 'none';
+    } else {
+      if (addBtn) addBtn.style.display = 'none';
+      if (delBtn) delBtn.style.display = 'none';
+    }
+
+    // Merge header rows visually across the full grid where possible.
+    // (If merge API differs by build, this is best-effort and non-fatal.)
+    try {
+      const totalCols = (rosterSheet.options.columns || []).length;
+      for (let y = 0; y < rows.length; y++) {
+        const rowType = rows[y]?.[2];
+        if (rowType === 'header') {
+          // merge from TEAM column across visible columns
+          const startX = sheetColIndexForKey('team_name');
+          if (startX >= 0) {
+            rosterSheet.setMerge?.(startX, y, Math.max(1, totalCols - startX), 1);
+          }
+        }
+      }
+    } catch (_) {}
+  };
+
+  function isHeaderRow(row) {
+    return String(row?.[2] || '') === 'header';
+  }
+
+  function isLeadRow(row) {
+    return String(row?.[2] || '') === 'lead';
+  }
+
+  function isSpacerRow(row) {
+    return String(row?.[2] || '') === 'spacer';
+  }
+
+  function onUpdateTable(instance, cell, col, row, val, label, cellName) {
+    try {
+      const rowData = instance.getRowData(row);
+      if (isSpacerRow(rowData)) {
+        const tr = cell?.parentNode;
+        if (tr) tr.classList.add('sheet-team-spacer');
+        cell.innerHTML = '';
+        return;
+      }
+      if (isHeaderRow(rowData)) {
+        const tr = cell?.parentNode;
+        if (tr) tr.classList.add('sheet-team-header', String(rowData?.[3] || ''));
+        // render the header line in the TEAM column
+        const teamCol = sheetColIndexForKey('team_name');
+        if (col === teamCol) {
+          const headerText = String(rowData?.[5] || '');
+          const parts = headerText.split('·').map(s => s.trim()).filter(Boolean);
+          const left = parts[0] || headerText;
+          const rest = parts.slice(1).join(' · ');
+          cell.innerHTML = `<span class="team-badge">
+            <span class="pill"><span class="team-name">${esc(left)}</span>${rest ? `<span class="meta"> · ${esc(rest)}</span>` : ''}</span>
+          </span>`;
+        } else {
+          cell.innerHTML = '';
+        }
+      } else if (isLeadRow(rowData)) {
+        const tr = cell?.parentNode;
+        if (tr) tr.classList.add('sheet-lead-row');
+        // role pills mimic legacy
+        const roleCol = sheetColIndexForKey('role');
+        if (col === roleCol) cell.innerHTML = `<span class="role-badge role-lead">Team Lead</span>`;
+      } else {
+        // member rows: pills for ROLE + STATUS
+        const roleCol = sheetColIndexForKey('role');
+        if (col === roleCol) cell.innerHTML = `<span class="role-badge role-member">Member</span>`;
+      }
+    } catch (_) {}
+  }
+
+  // Legacy handler (kept intact); new behavior uses oneditionend (blur-to-save).
+  async function onSheetChange(instance, cell, x, y, value) {
+    if (isApplyingRemote) return;
+    if (role === 'member') return;
+    const key = getSheetColumnKey(instance, x);
+    if (!key) return;
+
+    const row = instance.getRowData(y);
+    const membershipId = parseInt(row[0]);
+    if (!membershipId) return;
+
+    setSaveDot('saving');
+    cell.classList.add('changed');
+
+    try {
+      const res = await fetch(API + `/api/roster/update/${membershipId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ column_name: key, new_value: value, section_id: sectionId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Save failed');
+      cell.classList.remove('changed');
+      setSaveDot('ok');
+      if (d.refresh) {
+        setTimeout(() => loadRoster(), 50);
+      }
+    } catch (e) {
+      setSaveDot('err');
+      toast('error', 'Save Failed', e.message);
+      setTimeout(() => setSaveDot('ok'), 2500);
+    }
+  }
+
+  function onEditionStart(instance, cell, x, y) {
+    try {
+      const oldValue = instance.getValueFromCoords(x, y);
+      editContext = { x, y, oldValue };
+    } catch (_) { editContext = null; }
+  }
+
+  async function onEditionEnd(instance, cell, x, y, value) {
+    if (isApplyingRemote) return;
+    if (role === 'member') return;
+    const key = getSheetColumnKey(instance, x);
+    if (!key) return;
+
+    const row = instance.getRowData(y);
+    const rowType = String(row?.[2] || '');
+    const membershipId = parseInt(row[0]);
+    const isPatchable = !!membershipId && rowType === 'member';
+    if (!isPatchable) return;
+
+    // Admin base-field edits: route through existing endpoint to avoid breaking constraints.
+    // Dynamic columns: use new /api/roster/patch endpoint.
+    const isDynamic = !META_COLS.some(c => c.key === key) && !BASE_COLS.some(c => c.key === key);
+
+    const oldValue = (editContext && editContext.x === x && editContext.y === y) ? editContext.oldValue : instance.getValueFromCoords(x, y);
+    const newValue = value;
+    if (String(oldValue ?? '') === String(newValue ?? '')) return;
+
+    setSaveDot('saving');
+
+    try {
+      let res;
+      if (isDynamic) {
+        res = await fetch(API + `/api/roster/patch`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ membership_id: membershipId, section_id: sectionId, patch: { [key]: newValue } }),
+        });
+      } else {
+        // name/student_id edit (admin only)
+        res = await fetch(API + `/api/roster/update/${membershipId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ column_name: key, new_value: newValue, section_id: sectionId }),
+        });
+      }
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Save failed');
+
+      cell.classList.remove('sheet-flash-err');
+      cell.classList.add('sheet-flash-ok');
+      setTimeout(() => cell.classList.remove('sheet-flash-ok'), 900);
+      setSaveDot('ok');
+    } catch (e) {
+      try {
+        isApplyingRemote = true;
+        instance.setValueFromCoords(x, y, oldValue, true);
+      } catch (_) {}
+      finally { isApplyingRemote = false; }
+
+      cell.classList.remove('sheet-flash-ok');
+      cell.classList.add('sheet-flash-err');
+      setTimeout(() => cell.classList.remove('sheet-flash-err'), 1200);
+
+      setSaveDot('err');
+      toast('error', 'Sync Failed', e.message);
+      setTimeout(() => setSaveDot('ok'), 2500);
+    } finally {
+      editContext = null;
+    }
+  }
+
+  // v4 onchangeheader signature: (el, column, oldValue, newValue)
+  async function onChangeHeader(el, colIndex, oldValue, newValue) {
+    if (role !== 'admin') return;
+    const baseLen = META_COLS.length + BASE_COLS.length;
+    if (colIndex < baseLen) {
+      // Revert — don't allow renaming base columns
+      if (rosterSheet) rosterSheet.setHeader(colIndex, oldValue);
+      toast('error', 'Protected', 'Cannot rename base columns.');
+      return;
+    }
+    // Update the runtime column title and persist
+    try {
+      const col = rosterSheet.options.columns[colIndex];
+      if (col) col.title = newValue || oldValue;
+      await saveColumnConfigToServer();
+      toast('success', 'Renamed', `Column renamed to "${newValue}".`);
+    } catch (e) {
+      toast('error', 'Rename Failed', e.message);
+    }
+  }
+
+  // ── Custom column add / remove (bypasses broken jspreadsheet built-in) ──
+  async function addDynamicColumn() {
+    const name = prompt('Enter new column name:');
+    if (!name || !name.trim()) return;
+    const title = name.trim();
+    const key = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'col_' + Date.now();
+
+    // Read current config from server data, append new column
+    const currentCfg = (rosterData && rosterData.column_config) ? [...rosterData.column_config] : [];
+    if (currentCfg.some(c => c.key === key)) {
+      toast('error', 'Exists', `Column key "${key}" already exists.`);
+      return;
+    }
+    currentCfg.push({ key, title, type: 'text', width: 140 });
+
+    try {
+      const res = await fetch(API + `/api/admin/roster/config-update`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section_id: sectionId, column_config: currentCfg }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Failed');
+      toast('success', 'Column Added', `"${title}" added.`);
+      await loadRoster(); // full re-render
+    } catch (e) {
+      toast('error', 'Add Failed', e.message);
+    }
+  }
+
+  async function removeDynamicColumn() {
+    const currentCfg = (rosterData && rosterData.column_config) ? [...rosterData.column_config] : [];
+    if (!currentCfg.length) {
+      toast('info', 'No Columns', 'No dynamic columns to remove.');
+      return;
+    }
+    const names = currentCfg.map((c, i) => `${i + 1}. ${c.title || c.key}`).join('\n');
+    const choice = prompt('Enter the number of the column to remove:\n' + names);
+    if (!choice) return;
+    const idx = parseInt(choice) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= currentCfg.length) {
+      toast('error', 'Invalid', 'Invalid column number.');
+      return;
+    }
+    const removed = currentCfg.splice(idx, 1)[0];
+
+    try {
+      const res = await fetch(API + `/api/admin/roster/config-update`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section_id: sectionId, column_config: currentCfg }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Failed');
+      toast('success', 'Column Removed', `"${removed.title || removed.key}" removed.`);
+      await loadRoster(); // full re-render
+    } catch (e) {
+      toast('error', 'Remove Failed', e.message);
+    }
+  }
+
+  async function saveColumnConfigToServer() {
+    if (role !== 'admin' || !rosterSheet) return;
+    const all = rosterSheet.options.columns || [];
+    const baseLen = META_COLS.length + BASE_COLS.length;
+    const dynamic = all.slice(baseLen).map((c, i) => ({
+      key: c.key || `col_${i}`,
+      title: c.title || `Column ${i + 1}`,
+      type: c.type || 'text',
+      width: c.width || 140,
+    }));
+    const res = await fetch(API + `/api/admin/roster/config-update`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section_id: sectionId, column_config: dynamic }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'Config save failed');
+  }
+
+  // Override CSV download to export from Jspreadsheet grid
+  window.downloadCSV = function downloadCSVFromSheet() {
+    if (!rosterSheet) return;
+    const rows = rosterSheet.getData() || [];
+    const cols = (rosterSheet.options.columns || []);
+
+    // Export: base + dynamic columns, exclude internal meta columns and non-data rows.
+    const exportColIdx = [];
+    for (let i = 0; i < cols.length; i++) {
+      if (i < META_COLS.length) continue; // skip _mid/_tid/_type/_tc
+      exportColIdx.push(i);
+    }
+
+    const headers = exportColIdx.map(i => cols[i]?.title ?? '');
+    const out = [headers];
+
+    let lastTeam = null;
+    for (const r of rows) {
+      const rowType = String(r?.[2] || '').toLowerCase(); // _row_type lives in meta col index 2
+      if (rowType !== 'lead' && rowType !== 'member') continue;
+
+      const teamVal = String(r?.[sheetColIndexForKey('team_name')] ?? '');
+      if (lastTeam !== null && teamVal && teamVal !== lastTeam) {
+        // add spacing between teams in CSV (visual only)
+        out.push(new Array(exportColIdx.length).fill(''));
+        out.push(new Array(exportColIdx.length).fill(''));
+      }
+      lastTeam = teamVal || lastTeam;
+
+      out.push(exportColIdx.map(i => (r?.[i] ?? '')));
+    }
+
+    const BOM = '\uFEFF';
+    const csv = BOM + out.map(rr => rr.map(c => `"${String(c ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `Roster_${(rosterData?.course_name||'Course')}_${(rosterData?.section_name||'Section')}.csv`.replace(/[^\w.-]/g, '_');
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('success', 'CSV Downloaded', 'Roster exported.');
+  };
+
+  // Export a formatted Excel workbook (.xlsx). CSV cannot store formatting.
+  window.downloadXLSX = function downloadXLSX() {
+    try {
+      if (!rosterSheet) return;
+      if (typeof XLSX === 'undefined') {
+        toast('error', 'Excel Export Unavailable', 'XLSX library failed to load.');
+        return;
+      }
+
+      const rows = rosterSheet.getData() || [];
+      const cols = (rosterSheet.options.columns || []);
+
+      // Visible/export columns: base + dynamic, skip internal meta columns.
+      const exportColIdx = [];
+      for (let i = 0; i < cols.length; i++) {
+        if (i < META_COLS.length) continue;
+        exportColIdx.push(i);
+      }
+
+      const headers = exportColIdx.map(i => String(cols[i]?.title ?? ''));
+      const aoa = [headers];
+
+      const teamCol = sheetColIndexForKey('team_name');
+      let lastTeam = null;
+      for (const r of rows) {
+        const rowType = String(r?.[2] || '').toLowerCase();
+        if (rowType !== 'lead' && rowType !== 'member') continue;
+
+        const teamVal = teamCol >= 0 ? String(r?.[teamCol] ?? '') : '';
+        if (lastTeam !== null && teamVal && teamVal !== lastTeam) {
+          aoa.push(new Array(exportColIdx.length).fill(''));
+          aoa.push(new Array(exportColIdx.length).fill(''));
+        }
+        lastTeam = teamVal || lastTeam;
+
+        aoa.push(exportColIdx.map(i => (r?.[i] ?? '')));
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      // Column widths: simple heuristic based on max string length in each column.
+      const maxLen = new Array(exportColIdx.length).fill(0);
+      for (const row of aoa) {
+        for (let c = 0; c < exportColIdx.length; c++) {
+          const v = row?.[c];
+          const s = v == null ? '' : String(v);
+          if (s.length > maxLen[c]) maxLen[c] = s.length;
+        }
+      }
+      ws['!cols'] = maxLen.map((n, i) => {
+        const titleLen = (headers[i] || '').length;
+        const base = Math.max(n, titleLen);
+        // bounds: min 10 chars, max 48 chars
+        return { wch: Math.max(10, Math.min(48, base + 2)) };
+      });
+
+      // Styles (requires xlsx-js-style)
+      const headerFill = 'F59E0B'; // amber/orange
+      const headerStyle = {
+        font: { bold: true, color: { rgb: '000000' } },
+        fill: { patternType: 'solid', fgColor: { rgb: headerFill } },
+        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+        border: {
+          top: { style: 'thin', color: { rgb: '000000' } },
+          bottom: { style: 'thin', color: { rgb: '000000' } },
+          left: { style: 'thin', color: { rgb: '000000' } },
+          right: { style: 'thin', color: { rgb: '000000' } },
+        },
+      };
+
+      // Apply header style to first row.
+      for (let c = 0; c < exportColIdx.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r: 0, c });
+        if (ws[addr]) ws[addr].s = headerStyle;
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Roster');
+      const fname = `Roster_${(rosterData?.course_name||'Course')}_${(rosterData?.section_name||'Section')}.xlsx`
+        .replace(/[^\w.-]/g, '_');
+      XLSX.writeFile(wb, fname);
+      toast('success', 'Excel Downloaded', 'Roster exported with formatting.');
+    } catch (e) {
+      toast('error', 'Excel Export Failed', e?.message || String(e));
+    }
+  };
+</script>
+</body>
+</html>

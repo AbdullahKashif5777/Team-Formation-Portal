@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Portal · Team Lead Dashboard</title>
+  <meta name="description" content="Team Lead portal – manage your project team members in real-time."/>
+  <link rel="stylesheet" href="/static/style.css?v=13"/>
+  <style>
+    .team-slots { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .slot {
+      flex: 1; min-width: 80px; height: 56px; border-radius: 10px;
+      border: 2px dashed var(--border); display: flex; align-items: center;
+      justify-content: center; font-size: 22px; color: var(--text-3);
+      transition: all 0.3s;
+    }
+    .slot.filled {
+      border-style: solid; border-color: var(--violet);
+      background: var(--violet-dim); color: var(--violet-light);
+      font-size: 13px; font-weight: 600; font-family: 'Space Grotesk',sans-serif;
+    }
+    .slot.filled.s2 { border-color: var(--amber); background: var(--amber-dim); color: var(--amber); }
+    .slot.filled.s3 { border-color: var(--emerald); background: var(--emerald-dim); color: var(--emerald); }
+    .realtime-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.78rem; color: var(--text-3);
+    }
+    .ws-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-3); transition: background 0.3s;
+    }
+    .ws-dot.connected { background: var(--emerald); animation: pulse 2s infinite; }
+    .notif-item {
+      padding: 12px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle);
+      margin-bottom: 8px; font-size: 0.83rem; color: var(--text-2);
+      animation: fadeSlide 0.3s ease;
+    }
+    .notif-time { font-size: 0.75rem; color: var(--text-3); margin-top: 4px; }
+    .count-badge {
+      background: var(--violet); color: #fff;
+      font-size: 0.72rem; font-weight: 700; padding: 2px 7px;
+      border-radius: 10px; margin-left: 6px;
+    }
+    .section-tabs {
+      display: flex; gap: 8px; overflow-x: auto; margin-bottom: 20px; padding: 0 32px; max-width:1400px; margin: 20px auto 0;
+    }
+    .section-tab {
+      padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-subtle); color: var(--text-2); font-size: 0.85rem;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .section-tab:hover { background: rgba(255,255,255,0.1); }
+    .section-tab.active { background: var(--violet); color: #fff; border-color: var(--violet); }
+    .member-remove-btn {
+      margin-left: auto;
+      min-width: 88px;
+      width: 88px;
+      justify-content: center;
+      align-self: center;
+      flex: 0 0 88px;
+      padding: 6px 10px !important;
+      font-size: 0.74rem !important;
+      white-space: nowrap;
+    }
+    /* Spreadsheet Styles */
+    .roster-table-wrap { overflow-x: auto; margin-top: 15px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: rgba(0,0,0,0.2); }
+    .roster-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .roster-table th { background: rgba(255,255,255,0.05); color: var(--text-3); font-weight: 600; text-align: left; padding: 12px; border-bottom: 2px solid var(--border-subtle); text-transform: uppercase; letter-spacing: 1px; font-size: 0.75rem; }
+    .roster-table td { padding: 12px; border-bottom: 1px solid var(--border-subtle); color: var(--text-2); }
+    .roster-table tr:hover { background: rgba(255,255,255,0.02); }
+    .role-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .role-lead { background: rgba(139,92,246,0.2); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+    .role-member { background: rgba(255,255,255,0.05); color: var(--text-3); border: 1px solid var(--border-subtle); }
+
+    .invite-search {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-1);
+      outline: none;
+      transition: all 0.2s;
+      font-size: 0.88rem;
+    }
+    .invite-search:focus { border-color: var(--violet); background: rgba(255,255,255,0.07); }
+    .invite-row {
+      display:flex; align-items:center; gap:10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 8px;
+    }
+    .invite-meta { flex: 1; min-width: 0; }
+    .invite-name { font-weight: 700; font-size: 0.9rem; color: var(--text-1); }
+    .invite-sub { font-size: 0.78rem; color: var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  </style>
+</head>
+<body>
+<div class="bg-anim">
+  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+</div>
+
+<div class="page-wrapper">
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">UP</div>
+      <span class="brand-name">UMT Team Portal</span>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle-btn">Light mode</button>
+      <div class="realtime-bar">
+        <div class="ws-dot" id="ws-dot"></div>
+        <span id="ws-status">Connecting…</span>
+      </div>
+      <span class="nav-badge">Team Lead</span>
+      <span class="nav-user" id="nav-user-name">Loading…</span>
+      <button class="btn-logout" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- Section Tabs -->
+  <div class="section-tabs" id="section-tabs-container">
+    <!-- Tabs rendered here -->
+  </div>
+
+  <!-- Stats row -->
+  <div style="padding: 16px 32px 0; max-width:1400px; margin:0 auto;">
+    <div class="stat-row">
+      <div class="stat-card glass">
+        <div class="stat-value violet" id="stat-members">0</div>
+        <div class="stat-label">Team Members</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-value amber" id="stat-pending">0</div>
+        <div class="stat-label">Pending Requests</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-value green" id="stat-slots">3</div>
+        <div class="stat-label">Slots Available</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-value violet" id="stat-closes">—</div>
+        <div class="stat-label">Closing Time</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3-column layout -->
+  <div class="portal-layout portal-3col">
+
+    <!-- LEFT: My Team -->
+    <div class="glass panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-icon">TM</span> My Team</div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary btn-sm" style="font-size:0.75rem; padding: 6px 14px;" onclick="goToRoster()">Roster Sheet</button>
+          <span class="badge badge-accepted" id="team-status-badge">0/3</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div class="form-label" style="margin-bottom:8px;">Team Name</div>
+        <div id="team-name-display" style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:1.1rem; color:var(--violet-light);">Loading…</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="form-label" style="margin-bottom:10px;">Member Slots</div>
+      <div class="team-slots" id="team-slots">
+        <div class="slot">+</div>
+        <div class="slot">+</div>
+        <div class="slot">+</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="form-label" style="margin-bottom:10px;">Progress</div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+      </div>
+      <div style="font-size:0.78rem; color:var(--text-3); margin-top:6px;" id="progress-label">0 of 3 slots filled</div>
+
+      <div class="divider"></div>
+      <div id="accepted-members-list"></div>
+
+      <div class="divider"></div>
+
+      <div class="panel-header" style="padding:0; margin-bottom:10px;">
+        <div class="panel-title"><span class="panel-icon">IV</span> Invite Students</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadEligibleStudents()">↺ Refresh</button>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <input id="invite-search" class="invite-search" placeholder="Search eligible students by name / ID / email…" oninput="renderEligibleStudents()"/>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <div class="form-label" style="margin-bottom:8px;">Pending Invites</div>
+        <div id="pending-invites-list"></div>
+      </div>
+
+      <div class="form-label" style="margin-bottom:8px;">Eligible Students (Not in a team yet)</div>
+      <div id="eligible-students-list"></div>
+    </div>
+
+    <!-- CENTER: Join Requests -->
+    <div class="glass panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">RQ</span> Join Requests
+          <span class="count-badge" id="req-count">0</span>
+        </div>
+        <span style="font-size:0.8rem; color:var(--text-3);" id="req-sub">Real-time updates</span>
+      </div>
+      <div id="requests-list">
+        <div class="empty-state">
+          <div class="empty-icon">--</div>
+          <div class="empty-title">No Requests Yet</div>
+          <div class="empty-desc">When students request to join your team, they'll appear here instantly.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Notifications -->
+    <div class="glass panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-icon">LG</span> Activity Log</div>
+        <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear</button>
+      </div>
+      <div id="notif-log">
+        <div class="empty-state">
+          <div class="empty-icon">--</div>
+          <div class="empty-title">All Quiet</div>
+          <div class="empty-desc">Activity will appear here in real-time.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end grid -->
+</div><!-- end page-wrapper -->
+
+<div class="modal-overlay glass" id="roster-modal">
+  <div class="modal glass glass-glow" style="max-width: 1000px; width: 95%;">
+    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div>
+        <div class="modal-title" id="roster-title">Section Roster</div>
+        <div class="modal-sub" id="roster-sub">Course Name · Section Name</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-success btn-sm" id="export-csv-btn">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeRosterModal()">Close</button>
+      </div>
+    </div>
+    
+    <div class="roster-table-wrap">
+      <table class="roster-table">
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Name</th>
+            <th>Student ID</th>
+            <th>Email</th>
+            <th>Team Name</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+const API = window.__portalApiBase();
+initTheme();
+const token = localStorage.getItem('token');
+const userName = localStorage.getItem('user_name') || 'Lead';
+const userId = parseInt(localStorage.getItem('user_id') || '0');
+const defaultSectionId = localStorage.getItem('default_section');
+
+if (!token) {
+  window.location.href = '/';
+}
+
+document.getElementById('nav-user-name').textContent = userName;
+
+let ws = null;
+let sectionsData = [];
+let currentSectionId = null;
+let activeRosterSectionId = null;
+let logItems = [];
+let eligibleStudents = [];
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connectWS() {
+  const wsUrl = window.__portalWsUrl(userId, token);
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-status').textContent = 'Live';
+    ws._ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-status').textContent = 'Reconnecting…';
+    clearInterval(ws._ping);
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onmessage = (e) => {
+    if (e.data === 'pong') return;
+    const { event, data } = JSON.parse(e.data);
+    handleEvent(event, data);
+  };
+}
+
+function handleEvent(event, data) {
+  // If event has section_id, only update if it matches current section
+  if (data.section_id && data.section_id != currentSectionId) {
+    // Optionally alert lead that another section has activity
+    if (event === 'new_request') {
+      toast('info', 'Activity in another section', `New request received in one of your other sections.`);
+      scheduleLoadData(); // Silent refresh
+    }
+    return;
+  }
+
+  if (event === 'new_request') {
+    addLog(`New request from ${data.member_name} (${data.member_id})`);
+    toast('info', 'New Join Request', `${data.member_name} wants to join your team`);
+    scheduleLoadData();
+  } else if (event === 'team_updated') {
+    scheduleLoadData();
+    if (activeRosterSectionId) openRosterModal();
+    addLog('Team roster updated');
+  } else if (event === 'request_cancelled') {
+    scheduleLoadData();
+    addLog('A member cancelled their request');
+  }
+}
+
+let _loadDataTimer = null;
+function scheduleLoadData() {
+  if (_loadDataTimer) return;
+  _loadDataTimer = setTimeout(() => {
+    _loadDataTimer = null;
+    loadData();
+  }, 100);
+}
+
+// ── Load data ────────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const res = await fetch(`${API}/api/teams/my-team`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    sectionsData = data.sections || [];
+
+    if (sectionsData.length > 0) {
+      if (!currentSectionId) {
+        const found = sectionsData.find(s => s.section_id == defaultSectionId);
+        currentSectionId = found ? found.section_id : sectionsData[0].section_id;
+      }
+      renderTabs();
+      renderCurrentSection();
+    }
+  } catch(e) { console.error(e); }
+}
+
+function selectSection(id) {
+  currentSectionId = id;
+  localStorage.setItem('default_section', id);
+  const selected = sectionsData.find(s => s.section_id == id);
+  if (selected && selected.role === 'member') {
+    window.location.href = '/member';
+    return;
+  }
+  renderTabs();
+  renderCurrentSection();
+}
+
+function renderTabs() {
+  const container = document.getElementById('section-tabs-container');
+  container.innerHTML = sectionsData.map(s => `
+    <div class="section-tab ${s.section_id == currentSectionId ? 'active' : ''}" 
+         onclick="selectSection(${s.section_id})">
+      ${s.course_name} (${s.section_name})
+    </div>
+  `).join('');
+}
+
+function renderCurrentSection() {
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (s && s.role === 'member') {
+    window.location.href = '/member';
+    return;
+  }
+  if (!s || !s.team) {
+    // Show empty state for team
+    document.getElementById('team-name-display').textContent = 'No Team Created';
+    document.getElementById('requests-list').innerHTML = '<div class="empty-state">No team assigned to this section.</div>';
+    document.getElementById('pending-invites-list').innerHTML = '<div class="empty-state">—</div>';
+    document.getElementById('eligible-students-list').innerHTML = '<div class="empty-state">—</div>';
+    return;
+  }
+
+  const team = s.team;
+  document.getElementById('team-name-display').textContent = team.name || '—';
+  
+  const members = team.accepted_members || [];
+  const count = members.length;
+  const max = team.max_members || 3;
+
+  document.getElementById('team-status-badge').textContent = `${count}/${max}`;
+  document.getElementById('progress-bar').style.width = `${(count/max)*100}%`;
+  document.getElementById('progress-label').textContent = `${count} of ${max} slots filled`;
+  document.getElementById('stat-members').textContent = count;
+  document.getElementById('stat-slots').textContent = max - count;
+  const closeEl = document.getElementById('stat-closes');
+  if (closeEl) {
+    closeEl.textContent = s.formation_end ? new Date(s.formation_end).toLocaleString() : '—';
+  }
+
+  // Slots visual
+  const slotsEl = document.getElementById('team-slots');
+  const classes = ['', 's2', 's3'];
+  slotsEl.innerHTML = '';
+  for (let i = 0; i < max; i++) {
+    const div = document.createElement('div');
+    if (members[i]) {
+      div.className = `slot filled ${classes[i]||''}`;
+      div.textContent = members[i].name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      div.title = `${members[i].name}\n${members[i].student_id}`;
+    } else {
+      div.className = 'slot';
+      div.textContent = '+';
+    }
+    slotsEl.appendChild(div);
+  }
+
+  // Accepted members list
+  const listEl = document.getElementById('accepted-members-list');
+  if (members.length === 0) {
+    listEl.innerHTML = '<div style="font-size:0.83rem; color:var(--text-3); text-align:center; padding:12px 0;">No members yet</div>';
+  } else {
+    listEl.innerHTML = members.map(m => `
+      <div class="member-card">
+        <div class="member-avatar">${m.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>
+        <div class="member-info" style="flex:1;">
+          <div class="member-name">${m.name}</div>
+          <div class="member-id">${m.student_id}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Requests
+  const requests = team.pending_requests || [];
+  const reqEl = document.getElementById('requests-list');
+  document.getElementById('req-count').textContent = requests.length;
+  document.getElementById('stat-pending').textContent = requests.length;
+
+  if (requests.length === 0) {
+    reqEl.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">--</div>
+      <div class="empty-title">No Pending Requests</div>
+      <div class="empty-desc">Students will appear here when they request to join.</div>
+    </div>`;
+  } else {
+    reqEl.innerHTML = requests.map(r => `
+      <div class="request-card" id="req-${r.id}">
+        <div class="request-top">
+          <div class="member-avatar" style="width:38px;height:38px;font-size:13px;">
+            ${r.member_name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div class="member-name">${r.member_name}</div>
+            <div class="member-id">ID: ${r.member_id || 'N/A'}</div>
+            <div class="member-id">Email: ${r.member_email}</div>
+          </div>
+          <span class="badge badge-pending">Pending</span>
+        </div>
+        ${r.message ? `<div class="request-message">NOTE ${r.message}</div>` : ''}
+        <div class="request-time">⏰ ${timeAgo(r.created_at)}</div>
+        <div class="request-actions">
+          <button class="btn btn-success btn-sm" onclick="handleRequest(${r.id},'accept')" id="acc-${r.id}">
+            Accept
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="handleRequest(${r.id},'reject')" id="rej-${r.id}">
+            Reject
+          </button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Invites (lead->student)
+  renderPendingInvites(team);
+  loadEligibleStudents();
+}
+
+function renderPendingInvites(team) {
+  const invites = team.pending_invites || [];
+  const wrap = document.getElementById('pending-invites-list');
+  if (!wrap) return;
+  if (invites.length === 0) {
+    wrap.innerHTML = `<div style="font-size:0.83rem; color:var(--text-3); padding:8px 0;">No pending invites</div>`;
+    return;
+  }
+  wrap.innerHTML = invites.map(i => `
+    <div class="invite-row">
+      <div class="member-avatar" style="width:34px;height:34px;font-size:12px;">
+        ${(i.member_name || '?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+      </div>
+      <div class="invite-meta">
+        <div class="invite-name">${i.member_name}</div>
+        <div class="invite-sub">${i.member_id || ''} · ${i.member_email || ''}</div>
+      </div>
+      <span class="badge badge-pending">Invited</span>
+    </div>
+  `).join('');
+}
+
+async function loadEligibleStudents() {
+  if (!currentSectionId) return;
+  try {
+    const res = await fetch(`${API}/api/teams/sections/${currentSectionId}/eligible-students`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      eligibleStudents = [];
+      renderEligibleStudents();
+      return;
+    }
+    eligibleStudents = Array.isArray(data) ? data : [];
+    renderEligibleStudents();
+  } catch (e) {
+    eligibleStudents = [];
+    renderEligibleStudents();
+  }
+}
+
+function renderEligibleStudents() {
+  const wrap = document.getElementById('eligible-students-list');
+  if (!wrap) return;
+  const q = (document.getElementById('invite-search')?.value || '').toLowerCase().trim();
+  const filtered = (eligibleStudents || []).filter(s => {
+    const hay = `${s.name || ''} ${s.student_id || ''} ${s.email || ''}`.toLowerCase();
+    return !q || hay.includes(q);
+  });
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">--</div>
+      <div class="empty-title">No Eligible Students</div>
+      <div class="empty-desc">Everyone is already in a team, or you’ve already invited them.</div>
+    </div>`;
+    return;
+  }
+
+  wrap.innerHTML = filtered.map(s => `
+    <div class="invite-row">
+      <div class="member-avatar" style="width:34px;height:34px;font-size:12px;">
+        ${(s.name || '?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}
+      </div>
+      <div class="invite-meta">
+        <div class="invite-name">${s.name || '—'}</div>
+        <div class="invite-sub">${s.student_id || ''} · ${s.email || ''}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="sendInvite(${s.id})">Invite</button>
+    </div>
+  `).join('');
+}
+
+async function sendInvite(userId) {
+  if (!currentSectionId) return;
+  const btn = document.querySelector(`button[onclick="sendInvite(${userId})"]`);
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/teams/sections/${currentSectionId}/invite`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, message: null }),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      toast('error', 'Invite Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    toast('success', 'Invite Sent', 'The student was notified in real-time.');
+    await loadData();
+  } catch (e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+  finally { if (btn) btn.disabled = false; }
+}
+
+// ── Accept / Reject ──────────────────────────────────────────────────────────
+async function handleRequest(id, action) {
+  const btn = document.getElementById(action === 'accept' ? `acc-${id}` : `rej-${id}`);
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/teams/request/${id}/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      toast('error', 'Action Failed', data.detail || `Request failed (${res.status})`);
+      if (btn) btn.disabled = false;
+      return;
+    }
+    loadData();
+    addLog(action === 'accept' ? `Accepted a team member` : `Rejected a request`);
+    toast('success', action === 'accept' ? 'Member Accepted!' : 'Request Rejected',
+          action === 'accept' ? 'Team updated successfully.' : 'The student has been notified.');
+  } catch(e) {
+    toast('error', 'Network Error', 'Check your connection');
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function removeMember(memberId) {
+  if (!confirm("Are you sure you want to remove this member?")) return;
+  const btn = document.querySelector(`button[onclick="removeMember(${memberId})"]`);
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/teams/members/${memberId}/remove?section_id=${currentSectionId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      toast('error', 'Action Failed', data.detail || `Request failed (${res.status})`);
+      return;
+    }
+    try {
+      await loadData();
+    } catch (e) {
+      console.error('Refresh after removal failed:', e);
+    }
+    addLog(`Removed a team member`);
+    toast('info', 'Member Removed', 'They have been removed from the team.');
+  } catch(e) {
+    toast('error', 'Network Error', 'Check your connection');
+  }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function openRosterModal() {
+  if (!currentSectionId) {
+    toast('warning', 'No Section', 'No section is currently selected.');
+    return;
+  }
+  activeRosterSectionId = currentSectionId;
+  console.log('[DEBUG] Opening Roster for Current Section:', currentSectionId);
+  try {
+    const url = `${API}/api/teams/sections/${currentSectionId}/roster`;
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(`API Error ${res.status}: ${data.detail || 'Not Found'}\nURL: ${url}`);
+    }
+    
+    document.getElementById('roster-title').textContent = `${data.course_name} · ${data.section_name}`;
+    document.getElementById('roster-sub').textContent = `Spreadsheet view for ${data.roster.length} members`;
+    
+    const body = document.getElementById('roster-body');
+    body.innerHTML = data.roster.map(r => `
+      <tr>
+        <td><span class="role-badge ${r.role === 'Lead' ? 'role-lead' : 'role-member'}">${r.role}</span></td>
+        <td contenteditable="true" onblur="saveMemberChange(${r.user_id}, this, 'name')" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${r.name}</td>
+        <td class="tiny" contenteditable="true" onblur="saveMemberChange(${r.user_id}, this, 'student_id')" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${r.student_id || ''}</td>
+        <td class="tiny">${r.email}</td>
+        <td style="font-weight:600;">${r.team_name}</td>
+        <td><span class="tiny" style="color:var(--emerald);">${r.status}</span></td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-3);">No members enrolled in this section yet.</td></tr>';
+    
+    document.getElementById('export-csv-btn').onclick = () => {
+      window.open(`${API}/api/teams/sections/${currentSectionId}/roster/csv?token=${encodeURIComponent(token)}`, '_blank');
+    };
+    
+    document.getElementById('roster-modal').classList.add('open');
+  } catch (e) {
+    console.error('[ROSTER ERROR]', e);
+    toast('error', 'Roster Load Failed', e.message);
+  }
+}
+
+async function saveMemberChange(userId, el, field) {
+  const val = el.innerText.trim();
+  try {
+    const res = await fetch(`${API}/api/teams/roster/member/${userId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: val })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Save failed');
+    el.style.color = 'var(--emerald)';
+    setTimeout(() => { el.style.color = ''; }, 1000);
+  } catch (e) {
+    toast('error', 'Save Failed', e.message);
+    el.style.color = 'var(--rose)';
+  }
+}
+
+function closeRosterModal() { 
+  activeRosterSectionId = null;
+  document.getElementById('roster-modal').classList.remove('open'); 
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function addLog(msg) {
+  logItems.unshift({ msg, time: new Date().toLocaleTimeString() });
+  if (logItems.length > 50) logItems.pop();
+  const el = document.getElementById('notif-log');
+  el.innerHTML = logItems.map(l => `
+    <div class="notif-item">${l.msg}<div class="notif-time">${l.time}</div></div>`).join('');
+}
+
+function clearLog() {
+  logItems = [];
+  document.getElementById('notif-log').innerHTML = `<div class="empty-state">
+    <div class="empty-icon">--</div><div class="empty-title">All Quiet</div>
+    <div class="empty-desc">Activity will appear here in real-time.</div></div>`;
+}
+
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  return new Date(iso).toLocaleTimeString();
+}
+
+function toast(type, title, msg) {
+  const icons = { success: 'OK', error: 'ERR', info: 'INFO', warning: 'WARN' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'INFO'}</span>
+    <div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 5000);
+}
+
+function logout() {
+  localStorage.clear();
+  window.location.href = '/';
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = saved === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+function goToRoster() {
+  if (!currentSectionId) return toast('warning', 'No Section', 'Select a section tab first.');
+  window.location.href = `/roster?section_id=${currentSectionId}&role=lead`;
+}
+
+loadData();
+connectWS();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>

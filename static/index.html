@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Formation Portal · Login</title>
+  <meta name="description" content="UMT Team Formation Portal – Secure login for team leads and students."/>
+  <link rel="stylesheet" href="/static/style.css?v=13"/>
+  <style>
+    .umt-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 0.75rem; color: var(--text-3);
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border-subtle);
+      padding: 4px 10px; border-radius: 20px; margin-bottom: 8px;
+    }
+    .umt-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); }
+    .lead-info-box {
+      background: var(--violet-dim); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 12px 14px;
+      font-size: 0.82rem; color: var(--text-2); margin-top: 6px;
+    }
+    .lead-info-box strong { color: var(--violet-light); }
+    
+    #reg-sections-container {
+      width: 100%;
+      overflow: hidden;
+    }
+    .course-section-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
+      gap: 10px;
+      width: 100%;
+      align-items: end;
+    }
+    .course-section-row > div {
+      min-width: 0;
+    }
+    select.form-input {
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239ba1a6%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+      background-repeat: no-repeat;
+      background-position: right .7rem top 50%;
+      background-size: .65rem auto;
+      padding-right: 2rem;
+    }
+    select.form-input option {
+      background: var(--bg-surface);
+      color: var(--text-1);
+    }
+    .add-section-btn {
+      background: rgba(255,255,255,0.05);
+      border: 1px dashed var(--border-subtle);
+      color: var(--text-2);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+      transition: all 0.2s;
+    }
+    .add-section-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: var(--violet-light);
+      border-color: var(--violet);
+    }
+    .remove-section-btn {
+      width: 24px;
+      height: 40px;
+      background: none;
+      border: none;
+      color: var(--danger);
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      align-self: center;
+      margin: 0;
+    }
+    @media (max-width: 640px) {
+      .course-section-row {
+        grid-template-columns: 1fr;
+      }
+      .remove-section-btn {
+        justify-self: end;
+        height: 28px;
+      }
+    }
+    .forgot-link {
+      display: block; text-align: right; font-size: 0.8rem; color: var(--text-3); margin-top: 4px; text-decoration: none; transition: color 0.2s;
+    }
+    .forgot-link:hover { color: var(--violet-light); }
+  </style>
+</head>
+<body>
+<div class="bg-anim">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+<div style="position:fixed; top:14px; right:14px; z-index:1000;">
+  <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle-btn">Light mode</button>
+</div>
+
+<!-- Password Reset Modal -->
+<div class="modal-overlay glass" id="modal-forgot">
+  <div class="modal glass glass-glow">
+    <div class="modal-title">SEC Reset Password</div>
+    <div class="modal-sub">Enter your UMT email to receive a reset link.</div>
+    <div class="form-stack" style="margin-top:16px;">
+      <div class="form-group">
+        <label class="form-label">UMT Email</label>
+        <input id="forgot-email" class="form-input" type="email" placeholder="yourname@umt.edu.pk"/>
+      </div>
+      <div id="forgot-error" class="form-error"></div>
+      <div id="forgot-success" style="color:var(--emerald); font-size:0.85rem; display:none; margin-top:8px;">
+        If an account exists, a reset link has been sent.
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="forgot-btn" onclick="sendResetLink()">
+        <span id="forgot-btn-text">Send Link</span>
+        <span id="forgot-spinner" class="spinner" style="display:none"></span>
+      </button>
+      <button class="btn btn-ghost" onclick="closeForgotModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrapper auth-page">
+  <div class="glass glass-glow auth-card">
+
+    <div class="auth-logo">
+      <div class="auth-logo-icon">UP</div>
+      <div class="umt-tag"><span class="umt-dot"></span> University of Management & Technology</div>
+      <div class="auth-logo-title">Team Formation Portal</div>
+      <div class="auth-logo-sub">Secure · Real-time · Smart</div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" id="tab-login" onclick="switchTab('login')" role="tab">Sign In</button>
+      <button class="tab-btn" id="tab-register" onclick="switchTab('register')" role="tab">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="form-login">
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label" for="login-email">UMT Email</label>
+          <input id="login-email" class="form-input" type="email"
+                 placeholder="yourname@umt.edu.pk" autocomplete="email"/>
+        </div>
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label class="form-label" for="login-password">Password</label>
+            <a href="#" class="forgot-link" onclick="openForgotModal()">Forgot Password?</a>
+          </div>
+          <input id="login-password" class="form-input" type="password"
+                 placeholder="••••••••" autocomplete="current-password"/>
+        </div>
+        
+        <div id="login-error" class="form-error"></div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" id="login-btn" onclick="doLogin()">
+          <span id="login-btn-text">Sign In</span>
+          <span id="login-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </div>
+      <div class="auth-footer">
+        Don't have an account? <a href="#" onclick="switchTab('register')" style="color:var(--violet-light)">Register here</a>
+      </div>
+    </div>
+
+    <!-- Register Form -->
+    <div id="form-register" style="display:none">
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label" for="reg-name">Full Name</label>
+          <input id="reg-name" class="form-input" type="text" placeholder="Muhammad Ali Khan"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="reg-email">UMT Email</label>
+          <input id="reg-email" class="form-input" type="email"
+                 placeholder="f2023065011@umt.edu.pk" autocomplete="email"/>
+          <span class="form-hint">Must end with @umt.edu.pk</span>
+        </div>
+        <div class="form-group" id="sid-group">
+          <label class="form-label" for="reg-sid">Student ID</label>
+          <input id="reg-sid" class="form-input" type="text"
+                 placeholder="F2023065011" maxlength="11"/>
+          <span class="form-hint">Starts with F + 10 digits. Not required for Team Leads.</span>
+          <span id="sid-error" class="form-error"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="reg-password">Password</label>
+          <input id="reg-password" class="form-input" type="password"
+                 placeholder="Min 8 characters" autocomplete="new-password"/>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Enrolled Sections</label>
+          <div id="reg-sections-container">
+            <!-- Dynamic sections will be added here -->
+          </div>
+          <button class="add-section-btn" onclick="addRegSectionRow()">+ Add Another Course</button>
+        </div>
+
+        <div id="reg-error" class="form-error"></div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" id="reg-btn" onclick="doRegister()">
+          <span id="reg-btn-text">Create Account</span>
+          <span id="reg-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </div>
+      <div class="lead-info-box">
+        <strong>Team Lead?</strong> Your email must be pre-declared by the administrator. Select the sections you lead above.
+      </div>
+      <div class="auth-footer" style="margin-top:14px">
+        Already registered? <a href="#" onclick="switchTab('login')" style="color:var(--violet-light)">Sign in</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+  const API = window.__portalApiBase();
+  let availableCourses = [];
+  initTheme();
+
+  // ── Redirect if already logged in ──
+  const savedToken = localStorage.getItem('token');
+  const savedRole  = localStorage.getItem('role');
+  if (savedToken && savedRole) {
+    if (savedRole === 'admin') window.location.href = '/admin';
+    else window.location.href = savedRole === 'lead' ? '/lead' : '/member';
+  }
+
+  // Check for reset token in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const resetToken = urlParams.get('reset_token');
+  const verified = urlParams.get('verified');
+  if (verified === '1') {
+    toast('success', 'Verified', 'Email verified. You can now sign in.');
+  }
+  if (resetToken) {
+    // Show a prompt for new password
+    const newPass = prompt("Enter your new password (min 8 chars):");
+    if (newPass && newPass.length >= 8) {
+      fetch(`${API}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, new_password: newPass }),
+      }).then(res => res.json()).then(data => {
+        if (data.message) {
+          alert("Password reset successful! You can now log in.");
+          window.location.search = ""; // clear query
+        } else {
+          alert("Error: " + (data.detail || "Reset failed"));
+        }
+      });
+    }
+  }
+
+  // Check for tab parameter
+  const tabParam = urlParams.get('tab');
+  if (tabParam === 'register') {
+    switchTab('register');
+  } else if (tabParam === 'login') {
+    switchTab('login');
+  }
+
+  // ── Fetch Courses ──
+  async function loadCourses(silent = false) {
+    try {
+      const res = await fetch(`${API}/api/auth/courses`);
+      const freshCourses = await res.json();
+      const prev = JSON.stringify(availableCourses);
+      const next = JSON.stringify(freshCourses);
+      availableCourses = freshCourses;
+
+      // First load: add initial row
+      const container = document.getElementById('reg-sections-container');
+      if (container.children.length === 0) {
+        addRegSectionRow();
+      } else if (prev !== next) {
+        // Live refresh: update options in existing rows without losing selections
+        refreshRegSectionRows();
+        if (!silent) {
+          toast('info', 'Updated', 'Course/section list refreshed.');
+        }
+      }
+    } catch(e) {
+      console.error("Failed to load courses", e);
+    }
+  }
+
+  function addRegSectionRow() {
+    const container = document.getElementById('reg-sections-container');
+    const rowId = 'sec-row-' + Date.now();
+    
+    let courseOptions = '<option value="">Select Course...</option>';
+    availableCourses.forEach(c => {
+      courseOptions += `<option value="${c.id}">${c.name}</option>`;
+    });
+
+    const div = document.createElement('div');
+    div.className = 'course-section-row';
+    div.id = rowId;
+    div.style.marginBottom = '8px';
+    div.innerHTML = `
+      <div>
+        <select class="form-input reg-course-sel" onchange="updateRegSectionRow('${rowId}')">
+          ${courseOptions}
+        </select>
+      </div>
+      <div>
+        <select class="form-input reg-section-sel">
+          <option value="">Select Section...</option>
+        </select>
+      </div>
+      <button class="remove-section-btn" onclick="document.getElementById('${rowId}').remove()">×</button>
+    `;
+    container.appendChild(div);
+  }
+
+  window.updateRegSectionRow = function(rowId) {
+    const row = document.getElementById(rowId);
+    const courseId = row.querySelector('.reg-course-sel').value;
+    const secSel = row.querySelector('.reg-section-sel');
+    secSel.innerHTML = '<option value="">Select Section...</option>';
+    if (!courseId) return;
+    
+    const course = availableCourses.find(c => c.id == courseId);
+    if (course) {
+      course.sections.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id; opt.textContent = s.name;
+        secSel.appendChild(opt);
+      });
+    }
+  }
+
+  function refreshRegSectionRows() {
+    const rows = document.querySelectorAll('#reg-sections-container .course-section-row');
+    rows.forEach(row => {
+      const courseSel = row.querySelector('.reg-course-sel');
+      const secSel = row.querySelector('.reg-section-sel');
+      const prevCourse = courseSel.value;
+      const prevSection = secSel.value;
+
+      let courseOptions = '<option value="">Select Course...</option>';
+      availableCourses.forEach(c => {
+        courseOptions += `<option value="${c.id}">${c.name}</option>`;
+      });
+      courseSel.innerHTML = courseOptions;
+      if (availableCourses.some(c => String(c.id) === String(prevCourse))) {
+        courseSel.value = prevCourse;
+      }
+
+      secSel.innerHTML = '<option value="">Select Section...</option>';
+      if (courseSel.value) {
+        const course = availableCourses.find(c => String(c.id) === String(courseSel.value));
+        if (course) {
+          course.sections.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name;
+            secSel.appendChild(opt);
+          });
+          if (course.sections.some(s => String(s.id) === String(prevSection))) {
+            secSel.value = prevSection;
+          }
+        }
+      }
+    });
+  }
+
+  loadCourses();
+  setInterval(() => { loadCourses(true); }, 30000);
+
+  function switchTab(tab) {
+    document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
+    document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
+    document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    errEl.classList.remove('show');
+
+    if (!email || !password) { showError(errEl, 'Please fill in all fields'); return; }
+
+    setLoading('login', true);
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      let data = {};
+      try { data = await res.json(); }
+      catch (_) { data = { detail: `Server error (${res.status}). Check backend logs.` }; }
+      if (!res.ok) { showError(errEl, data.detail || 'Login failed'); return; }
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('role', data.role);
+      localStorage.setItem('user_name', data.name);
+      localStorage.setItem('user_id', data.user_id);
+
+      // If backend asks for role/section selection, route to /select-portal.
+      if (data.action === 'select_role' && Array.isArray(data.options) && data.options.length > 1) {
+        localStorage.setItem('portal_options', JSON.stringify(data.options));
+        toast('success', 'Welcome back!', 'Select which portal you want to access…');
+        setTimeout(() => { window.location.href = '/select-portal'; }, 450);
+        return;
+      }
+
+      if (data.section_id) {
+        localStorage.setItem('default_section', String(data.section_id));
+      }
+      
+      toast('success', 'Welcome back!', `Redirecting to ${data.role} portal…`);
+      setTimeout(() => {
+        if (data.role === 'admin') window.location.href = '/admin';
+        else window.location.href = data.role === 'lead' ? '/lead' : '/member';
+      }, 800);
+    } catch (e) {
+      showError(errEl, 'Network error. Is the server running?');
+    } finally {
+      setLoading('login', false);
+    }
+  }
+
+  async function doRegister() {
+    const name = document.getElementById('reg-name').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const sid = document.getElementById('reg-sid').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const errEl = document.getElementById('reg-error');
+    const sidErr = document.getElementById('sid-error');
+    errEl.classList.remove('show'); sidErr.classList.remove('show');
+
+    // Collect section IDs
+    const sectionIds = [];
+    document.querySelectorAll('.reg-section-sel').forEach(sel => {
+      if (sel.value) sectionIds.push(parseInt(sel.value));
+    });
+
+    if (!name || !email || !password) { showError(errEl, 'Name, email and password are required'); return; }
+    if (!email.toLowerCase().endsWith('@umt.edu.pk')) { showError(errEl, 'Email must end with @umt.edu.pk'); return; }
+    if (sid && !/^[Ff]\d{10}$/.test(sid)) { showError(sidErr, 'Format: F + 10 digits (e.g. F2023065011)'); return; }
+    if (password.length < 8) { showError(errEl, 'Password must be at least 8 characters'); return; }
+    if (sectionIds.length === 0) { showError(errEl, 'Please select at least one course and section'); return; }
+
+    setLoading('reg', true);
+    try {
+      const body = { name, email: email.toLowerCase(), password, section_ids: sectionIds };
+      if (sid) body.student_id = sid;
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { showError(errEl, data.detail || 'Registration failed'); return; }
+
+      // Member verification flow: backend returns a message and no token.
+      const token = data.token || data.access_token;
+      const role = data.user_role || data.role;
+      if (!token) {
+        toast('success', 'Check your email', data.message || 'Verification email sent. Please verify to create your account.');
+        switchTab('login');
+        return;
+      }
+
+      if (!role) { showError(errEl, 'Registration succeeded but auto-login failed.'); return; }
+      localStorage.setItem('token', token);
+      localStorage.setItem('role', role);
+      localStorage.setItem('user_name', data.name);
+      localStorage.setItem('user_id', data.user_id);
+      
+      if (sectionIds.length > 0) {
+        localStorage.setItem('default_section', sectionIds[0]);
+      }
+
+      toast('success', 'Account Created!', `Redirecting to ${role} portal…`);
+      // Ensure session is persisted before redirecting.
+      if (role === 'member') {
+        window.location.href = '/member';
+      } else {
+        // Keep existing role routing behavior for non-students.
+        setTimeout(() => {
+          switch (role) {
+            case 'admin':
+              window.location.href = '/admin';
+              break;
+            case 'lead':
+              window.location.href = '/lead';
+              break;
+            default:
+              window.location.href = '/member';
+              break;
+          }
+        }, 800);
+      }
+    } catch (e) {
+      showError(errEl, 'Network error. Is the server running?');
+    } finally {
+      setLoading('reg', false);
+    }
+  }
+
+  function openForgotModal() { document.getElementById('modal-forgot').classList.add('open'); }
+  function closeForgotModal() { 
+    document.getElementById('modal-forgot').classList.remove('open');
+    document.getElementById('forgot-error').classList.remove('show');
+    document.getElementById('forgot-success').style.display = 'none';
+  }
+
+  async function sendResetLink() {
+    const email = document.getElementById('forgot-email').value.trim();
+    const errEl = document.getElementById('forgot-error');
+    const succEl = document.getElementById('forgot-success');
+    errEl.classList.remove('show');
+    succEl.style.display = 'none';
+
+    if (!email) { showError(errEl, 'Email is required'); return; }
+    
+    document.getElementById('forgot-btn').disabled = true;
+    document.getElementById('forgot-spinner').style.display = 'inline-block';
+    document.getElementById('forgot-btn-text').style.display = 'none';
+
+    try {
+      const res = await fetch(`${API}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (res.ok) { succEl.style.display = 'block'; }
+      else { showError(errEl, "Failed to send link"); }
+    } catch(e) { showError(errEl, "Network error"); }
+    finally {
+      document.getElementById('forgot-btn').disabled = false;
+      document.getElementById('forgot-spinner').style.display = 'none';
+      document.getElementById('forgot-btn-text').style.display = 'inline';
+    }
+  }
+
+  function showError(el, msg) { el.textContent = msg; el.classList.add('show'); }
+
+  function setLoading(form, on) {
+    document.getElementById(`${form}-btn`).disabled = on;
+    document.getElementById(`${form}-btn-text`).style.display = on ? 'none' : 'inline';
+    document.getElementById(`${form}-spinner`).style.display = on ? 'inline-block' : 'none';
+  }
+
+  function toast(type, title, msg) {
+    const icons = { success: 'OK', error: 'ERR', info: 'INFO' };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="toast-icon">${icons[type]||'INFO'}</span>
+      <div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 4000);
+  }
+
+  function initTheme() {
+    const saved = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) btn.textContent = saved === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+  }
+
+  // Enter key support
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const loginVisible = document.getElementById('form-login').style.display !== 'none';
+      if (document.getElementById('modal-forgot').classList.contains('open')) { sendResetLink(); }
+      else { loginVisible ? doLogin() : doRegister(); }
+    }
+  });
+</script>
+</body>
+</html>

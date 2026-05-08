@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UMT Team Portal · Admin Dashboard</title>
+  <meta name="description" content="Admin portal for managing courses, sections, and team leads."/>
+  <link rel="stylesheet" href="/static/style.css?v=13"/>
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .admin-grid-1 { display: grid; grid-template-columns: 1fr; gap: 18px; }
+    .admin-section-list {
+      max-height: 180px; overflow: auto; padding: 10px;
+      border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);
+      background: rgba(255,255,255,0.03);
+    }
+    .admin-section-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.86rem; color: var(--text-2); }
+    .tiny { font-size: 0.8rem; color: var(--text-3); }
+    .entity-card {
+      padding: 14px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle);
+      margin-bottom: 10px;
+    }
+    .entity-title { font-weight: 700; font-family: 'Space Grotesk', sans-serif; margin-bottom: 4px; }
+    .entity-sub { font-size: 0.82rem; color: var(--text-3); }
+    .entity-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+    .entity-section-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; margin-top:6px; }
+    .entity-section-row span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .admin-remove-btn { justify-content:center; white-space:nowrap; padding:6px 10px !important; flex-shrink: 0; }
+    .admin-btn-group { display: flex; gap: 8px; flex-shrink: 0; margin-left: auto; }
+    .admin-stat-wrap { padding: 0 32px; max-width: 1400px; margin: 18px auto 0; }
+    .realtime-bar { display:flex; align-items:center; gap:8px; font-size:0.78rem; color:var(--text-3); }
+    .ws-dot { width:8px; height:8px; border-radius:50%; background:var(--text-3); transition: background .25s; }
+    .ws-dot.connected { background: var(--emerald); box-shadow: 0 0 0 0 rgba(16,185,129,.5); animation: pulse 2s infinite; }
+    @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } .admin-stat-wrap { padding: 0 16px; } }
+    
+    /* Spreadsheet Styles */
+    .roster-table-wrap { overflow-x: auto; margin-top: 15px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: rgba(0,0,0,0.2); }
+    .roster-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .roster-table th { background: rgba(255,255,255,0.05); color: var(--text-3); font-weight: 600; text-align: left; padding: 12px; border-bottom: 2px solid var(--border-subtle); text-transform: uppercase; letter-spacing: 1px; font-size: 0.75rem; }
+    .roster-table td { padding: 12px; border-bottom: 1px solid var(--border-subtle); color: var(--text-2); }
+    .roster-table tr:hover { background: rgba(255,255,255,0.02); }
+    .role-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .role-lead { background: rgba(139,92,246,0.2); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+    .role-member { background: rgba(255,255,255,0.05); color: var(--text-3); border: 1px solid var(--border-subtle); }
+  </style>
+</head>
+<body>
+<div class="bg-anim">
+  <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
+</div>
+
+<div class="page-wrapper">
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">AD</div>
+      <span class="brand-name">UMT Admin Portal</span>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle-btn">Light mode</button>
+      <div class="realtime-bar"><div class="ws-dot" id="ws-dot"></div><span id="ws-status">Offline</span></div>
+      <span class="nav-badge">Administrator</span>
+      <span class="nav-user" id="admin-user-name">Not signed in</span>
+      <button class="btn-logout" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <div id="login-wrap" class="auth-page" style="padding-top:28px;">
+    <div class="glass glass-glow auth-card">
+      <div class="auth-logo">
+        <div class="auth-logo-icon">AD</div>
+        <div class="auth-logo-title">Admin Sign In</div>
+        <div class="auth-logo-sub">Manage courses, sections, and lead assignments</div>
+      </div>
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">Admin Email</label>
+          <input id="login-email" class="form-input" type="email" placeholder="admin@umt.edu.pk"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input id="login-password" class="form-input" type="password" placeholder="••••••••"/>
+          <a href="#" class="tiny" onclick="openForgotModal()">Forgot password?</a>
+        </div>
+        <div id="login-error" class="form-error"></div>
+        <button id="login-btn" class="btn btn-primary" style="justify-content:center; width:100%;" onclick="adminLogin()">
+          <span id="login-btn-text">Sign In</span><span id="login-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dashboard-wrap" style="display:none;">
+    <div class="admin-stat-wrap">
+      <div class="stat-row">
+        <div class="stat-card glass"><div class="stat-value violet" id="stat-courses">0</div><div class="stat-label">Courses</div></div>
+        <div class="stat-card glass"><div class="stat-value amber" id="stat-sections">0</div><div class="stat-label">Sections</div></div>
+        <div class="stat-card glass"><div class="stat-value green" id="stat-leads">0</div><div class="stat-label">Team Leads</div></div>
+        <div class="stat-card glass"><div class="stat-value violet" id="stat-teams">0</div><div class="stat-label">Teams</div></div>
+        <div class="stat-card glass"><div class="stat-value amber" id="stat-pending">0</div><div class="stat-label">Pending Requests</div></div>
+        <div class="stat-card glass"><div class="stat-value green" id="stat-members">0</div><div class="stat-label">Accepted Members</div></div>
+      </div>
+    </div>
+
+    <div class="portal-layout admin-grid-1">
+      <div class="glass panel">
+        <div class="panel-header"><div class="panel-title"><span class="panel-icon">MG</span> Management Actions</div></div>
+        <div class="admin-grid">
+          <div>
+            <div class="form-label" style="margin-bottom:8px;">Create Course</div>
+            <input id="course-name" class="form-input" placeholder="e.g. Data Structures and Algorithms"/>
+            <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="createCourse()">Add Course</button>
+            <div class="divider"></div>
+            <div class="form-label" style="margin-bottom:8px;">Create Section</div>
+            <select id="section-course" class="form-input"><option value="">Select course...</option></select>
+            <input id="section-name" class="form-input" style="margin-top:8px;" placeholder="e.g. W-10"/>
+            <input id="section-team-limit" class="form-input" style="margin-top:8px;" type="number" min="2" value="4" placeholder="Max Members per Team (incl. lead)"/>
+            <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="createSection()">Add Section</button>
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:8px;">Create Team Lead</div>
+            <input id="lead-name" class="form-input" placeholder="Full name"/>
+            <input id="lead-email" class="form-input" style="margin-top:8px;" placeholder="lead@umt.edu.pk"/>
+            <input id="lead-id" class="form-input" style="margin-top:8px;" placeholder="Employee/Lead ID (optional)"/>
+            <input id="lead-password" class="form-input" style="margin-top:8px;" type="password" placeholder="Temporary password"/>
+            <div class="form-label" style="margin-top:10px; margin-bottom:6px;">Assign Sections</div>
+            <div class="admin-section-list" id="lead-sections"></div>
+            <button class="btn btn-success btn-sm" style="margin-top:10px;" onclick="createLead()">Create Lead + Teams</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass panel">
+        <div class="panel-header"><div class="panel-title"><span class="panel-icon">CS</span> Courses & Sections</div></div>
+        <div id="courses-list"></div>
+      </div>
+
+      <div class="glass panel">
+        <div class="panel-header"><div class="panel-title"><span class="panel-icon">LD</span> Lead Directory</div></div>
+        <div id="leads-list"></div>
+      </div>
+      <div class="glass panel">
+        <div class="panel-header"><div class="panel-title"><span class="panel-icon">TM</span> Live Team Monitor</div></div>
+        <div id="teams-monitor"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Forgot Password Modal -->
+<div class="modal-overlay glass" id="forgot-modal">
+  <div class="modal glass glass-glow">
+    <div class="modal-title">Reset Password</div>
+    <div class="modal-sub">Enter your admin email to receive a reset link.</div>
+    <div class="form-stack" style="margin-top:16px;">
+      <div class="form-group">
+        <label class="form-label">Admin Email</label>
+        <input id="forgot-email" class="form-input" type="email" placeholder="admin@umt.edu.pk"/>
+      </div>
+      <div id="forgot-error" class="form-error"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="sendResetLink()">Send Link</button>
+      <button class="btn btn-ghost" onclick="closeForgotModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay glass" id="roster-modal">
+  <div class="modal glass glass-glow" style="max-width: 1000px; width: 95%;">
+    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div>
+        <div class="modal-title" id="roster-title">Section Roster</div>
+        <div class="modal-sub" id="roster-sub">Course Name · Section Name</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-success btn-sm" id="export-csv-btn">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeRosterModal()">Close</button>
+      </div>
+    </div>
+    
+    <div class="roster-table-wrap">
+      <table class="roster-table">
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Name</th>
+            <th>Student ID</th>
+            <th>Email</th>
+            <th>Team Name</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Timer Modal -->
+<div class="modal-overlay glass" id="timer-modal">
+  <div class="modal glass glass-glow">
+    <div class="modal-title">Set Formation Window</div>
+    <div class="modal-sub" id="timer-sub">Section</div>
+    <div class="form-stack" style="margin-top:16px;">
+      <div class="form-group">
+        <label class="form-label">Formation Start</label>
+        <input id="timer-start" class="form-input" type="datetime-local"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Formation End</label>
+        <input id="timer-end" class="form-input" type="datetime-local"/>
+      </div>
+      <div class="tiny">Leave either field empty for an open-ended window.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveTimer()">Save</button>
+      <button class="btn btn-ghost" onclick="closeTimerModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/config.js"></script>
+<script src="/api-runtime.js"></script>
+<script>
+const API = window.__portalApiBase();
+let token = localStorage.getItem('token');
+let courses = [];
+let leads = [];
+let activeRosterSectionId = null;
+let activeTimerSectionId = null;
+let ws = null;
+initTheme();
+
+function setLoading(id, on) {
+  const btn = document.getElementById(id + '-btn');
+  if (!btn) return;
+  btn.disabled = on;
+  document.getElementById(id + '-btn-text').style.display = on ? 'none' : 'inline';
+  document.getElementById(id + '-spinner').style.display = on ? 'inline-block' : 'none';
+}
+function showError(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.classList.add('show'); }
+function clearError(id) { document.getElementById(id).classList.remove('show'); }
+function toast(type, title, msg) {
+  const icons = { success: 'OK', error: 'ERR', info: 'INFO', warning: 'WARN' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'INFO'}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  return data;
+}
+
+async function adminLogin() {
+  clearError('login-error');
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return showError('login-error', 'Email and password are required');
+  setLoading('login', true);
+  try {
+    const res = await fetch(`${API}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) return showError('login-error', data.detail || 'Login failed');
+    if (data.role !== 'admin') return showError('login-error', 'This page is for admin accounts only');
+
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('role', data.role);
+    localStorage.setItem('user_name', data.name);
+    localStorage.setItem('user_id', data.user_id);
+    token = data.access_token;
+    document.getElementById('admin-user-name').textContent = data.name;
+    showDashboard();
+  } catch (e) {
+    showError('login-error', 'Network error. Please try again.');
+  } finally {
+    setLoading('login', false);
+  }
+}
+
+function openForgotModal() { document.getElementById('forgot-modal').classList.add('open'); }
+function closeForgotModal() {
+  document.getElementById('forgot-modal').classList.remove('open');
+  clearError('forgot-error');
+}
+async function sendResetLink() {
+  clearError('forgot-error');
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!email) return showError('forgot-error', 'Email is required');
+  try {
+    await fetch(`${API}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    toast('info', 'Reset Requested', 'If account exists, reset link has been sent.');
+    closeForgotModal();
+  } catch (e) {
+    showError('forgot-error', 'Unable to send reset link right now.');
+  }
+}
+
+function showDashboard() {
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('dashboard-wrap').style.display = 'block';
+  connectWS();
+  refreshAll();
+}
+
+function renderStats() {
+  // Kept for backward compatibility; primary stats come from overview now.
+  const sectionCount = courses.reduce((acc, c) => acc + (c.sections?.length || 0), 0);
+  document.getElementById('stat-courses').textContent = courses.length;
+  document.getElementById('stat-sections').textContent = sectionCount;
+  document.getElementById('stat-leads').textContent = leads.length;
+}
+
+function renderCourses() {
+  const courseSel = document.getElementById('section-course');
+  courseSel.innerHTML = '<option value="">Select course...</option>' +
+    courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+  const leadSections = document.getElementById('lead-sections');
+  leadSections.innerHTML = courses.map(c => `
+    <div style="margin-bottom:10px;">
+      <div class="tiny" style="margin-bottom:4px;">${c.name}</div>
+      ${(c.sections || []).map(s => `<label class="admin-section-item"><input type="checkbox" class="lead-sec" value="${s.id}"/> ${s.name}</label>`).join('')}
+    </div>
+  `).join('') || '<div class="tiny">No courses available yet.</div>';
+
+  document.getElementById('courses-list').innerHTML = courses.map(c => `
+    <div class="entity-card">
+      <div class="entity-title">${c.name}</div>
+      <div class="entity-sub">
+        ${(c.sections || []).length
+          ? c.sections.map(s => `
+            <div class="entity-section-row">
+              <span>${s.name}</span>
+              <div class="admin-btn-group">
+                <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="window.location.href='/roster?section_id=${s.id}&role=admin'">Roster Sheet</button>
+                <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="editSectionLimit(${s.id}, ${s.team_size_limit || 4}, '${s.name.replace(/'/g, "\\'")}')">Edit Limit</button>
+                <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="openTimerModal(${s.id}, '${s.name.replace(/'/g, "\\'")}', '${(s.formation_start||'').replace(/'/g, "\\'")}', '${(s.formation_end||'').replace(/'/g, "\\'")}')">Timer</button>
+                <button class="btn btn-danger btn-sm admin-remove-btn" onclick="deleteSection(${s.id}, '${s.name.replace(/'/g, "\\'")}')">Remove</button>
+              </div>
+            </div>
+          `).join('')
+          : 'No sections yet'}
+      </div>
+      <div class="entity-actions">
+        <button class="btn btn-danger btn-sm admin-remove-btn" onclick="deleteCourse(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Remove Course</button>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-title">No Courses</div><div class="empty-desc">Create your first course above.</div></div>';
+}
+
+function renderLeads() {
+  document.getElementById('leads-list').innerHTML = leads.map(l => {
+    const secList = l.sections || [];
+    const multi = secList.length > 1;
+    const esc = (s) => String(s || '').replace(/'/g, "\\'");
+    const sectionsRows = secList.length
+      ? secList.map(s => `
+      <div class="entity-section-row">
+        <span>${s.course_name} (${s.section_name})</span>
+        ${multi ? `<button type="button" class="btn btn-ghost btn-sm admin-remove-btn" onclick="removeLeadFromSection(${l.id}, ${s.section_id}, '${esc(s.course_name)}', '${esc(l.name)}')">Remove from course</button>` : ''}
+      </div>
+    `).join('')
+      : '';
+    const bulkLabel = multi ? 'Remove from all' : 'Remove Lead';
+    return `
+    <div class="entity-card">
+      <div class="entity-title">${l.name}</div>
+      <div class="entity-sub">${l.email}${l.employee_id ? ` · ${l.employee_id}` : ''}</div>
+      <div class="tiny" style="margin-top:6px;">${secList.length ? sectionsRows : 'No section assignment'}</div>
+      <div class="entity-actions">
+        <button type="button" class="btn btn-danger btn-sm admin-remove-btn" onclick="deleteLead(${l.id}, '${esc(l.name)}', ${secList.length})">${bulkLabel}</button>
+      </div>
+    </div>
+  `;
+  }).join('') || '<div class="empty-state"><div class="empty-title">No Leads</div><div class="empty-desc">Create lead accounts to populate this list.</div></div>';
+}
+
+function renderOverview(overview) {
+  const stats = overview.stats || {};
+  document.getElementById('stat-courses').textContent = stats.courses || 0;
+  document.getElementById('stat-sections').textContent = stats.sections || 0;
+  document.getElementById('stat-leads').textContent = stats.leads || 0;
+  document.getElementById('stat-teams').textContent = stats.teams || 0;
+  document.getElementById('stat-pending').textContent = stats.pending_requests || 0;
+  document.getElementById('stat-members').textContent = stats.accepted_memberships || 0;
+
+  const teams = overview.teams || [];
+  document.getElementById('teams-monitor').innerHTML = teams.map(t => `
+    <div class="entity-card">
+      <div class="entity-title">${t.team_name}</div>
+      <div class="entity-sub">${t.course_name} (${t.section_name}) · Lead: ${t.lead_name}</div>
+      <div class="tiny" style="margin-top:6px;">Accepted: ${t.accepted_count}/${t.member_slots_total != null ? t.member_slots_total : t.max_members} · Pending: ${t.pending_count} · Team size (incl. lead): ${t.team_size_limit != null ? t.team_size_limit : '—'}</div>
+      <div class="tiny" style="margin-top:4px;">Members: ${(t.members || []).length ? t.members.map(m => `${m.name} (${m.student_id || 'N/A'}, ${m.email})`).join(' | ') : 'None yet'}</div>
+    </div>
+  `).join('') || '<div class="empty-state"><div class="empty-title">No Teams</div><div class="empty-desc">Team data will appear here.</div></div>';
+}
+
+async function refreshAll() {
+  try {
+    const [courseResp, leadResp, overview] = await Promise.all([
+      api('/api/admin/courses'),
+      api('/api/admin/leads'),
+      api('/api/admin/overview'),
+    ]);
+    courses = courseResp;
+    leads = leadResp;
+    renderCourses();
+    renderLeads();
+    renderOverview(overview);
+  } catch (e) {
+    if (String(e.message).toLowerCase().includes('forbidden')) {
+      toast('error', 'Access denied', 'Admin session is invalid. Please sign in again.');
+      logout();
+      return;
+    }
+    toast('error', 'Load Failed', e.message);
+  }
+}
+
+function connectWS() {
+  const userId = parseInt(localStorage.getItem('user_id') || '0');
+  if (!token || !userId) return;
+  const wsUrl = window.__portalWsUrl(userId, token);
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-status').textContent = 'Live';
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-status').textContent = 'Reconnecting...';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    if (e.data === 'pong') return;
+    try {
+      const { event } = JSON.parse(e.data);
+      if (event === 'admin_team_activity') {
+        scheduleRefreshAll();
+        if (activeRosterSectionId) scheduleOpenRosterModal(activeRosterSectionId);
+      }
+    } catch (_) {}
+  };
+}
+
+let _refreshAllTimer = null;
+function scheduleRefreshAll() {
+  if (_refreshAllTimer) return;
+  _refreshAllTimer = setTimeout(() => {
+    _refreshAllTimer = null;
+    refreshAll();
+  }, 100);
+}
+
+let _rosterModalTimer = null;
+let _rosterModalSectionId = null;
+function scheduleOpenRosterModal(sectionId) {
+  _rosterModalSectionId = sectionId;
+  if (_rosterModalTimer) return;
+  _rosterModalTimer = setTimeout(() => {
+    const sid = _rosterModalSectionId;
+    _rosterModalTimer = null;
+    _rosterModalSectionId = null;
+    if (sid) openRosterModal(sid);
+  }, 100);
+}
+
+async function createCourse() {
+  const name = document.getElementById('course-name').value.trim();
+  if (!name) return toast('warning', 'Missing field', 'Course name is required.');
+  const btn = document.querySelector('button[onclick="createCourse()"]');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/api/admin/courses', { method: 'POST', body: JSON.stringify({ name }) });
+    document.getElementById('course-name').value = '';
+    toast('success', 'Course Created', `${name} added successfully.`);
+    refreshAll();
+  } catch (e) { toast('error', 'Create Failed', e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function createSection() {
+  const course_id = parseInt(document.getElementById('section-course').value || '0');
+  const name = document.getElementById('section-name').value.trim();
+  const team_size_limit = parseInt(document.getElementById('section-team-limit').value || '4');
+  if (!course_id || !name) return toast('warning', 'Missing fields', 'Select course and enter section name.');
+  const btn = document.querySelector('button[onclick="createSection()"]');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/api/admin/sections', { method: 'POST', body: JSON.stringify({ course_id, name, team_size_limit }) });
+    document.getElementById('section-name').value = '';
+    document.getElementById('section-team-limit').value = '4';
+    toast('success', 'Section Created', `${name} added successfully.`);
+    refreshAll();
+  } catch (e) { toast('error', 'Create Failed', e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function editSectionLimit(sectionId, currentLimit, sectionName) {
+  const next = prompt(`Max Members per Team (including lead) for "${sectionName}":`, String(currentLimit || 4));
+  if (next === null) return;
+  const team_size_limit = parseInt(String(next).trim() || '0');
+  if (!team_size_limit || team_size_limit < 2) {
+    toast('warning', 'Invalid value', 'Team limit must be at least 2 (lead + 1 member).');
+    return;
+  }
+  try {
+    const payload = { team_size_limit };
+    console.log('[admin editSectionLimit] PUT', `/api/admin/sections/${sectionId}`, payload);
+    const resp = await api(`/api/admin/sections/${sectionId}`, { method: 'PUT', body: JSON.stringify(payload) });
+    console.log('[admin editSectionLimit] response', resp);
+    toast('success', 'Updated', `Team limit set to ${team_size_limit}.`);
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Update Failed', e.message);
+  }
+}
+
+function openTimerModal(sectionId, sectionName, startIso, endIso) {
+  activeTimerSectionId = sectionId;
+  document.getElementById('timer-sub').textContent = `Section: ${sectionName}`;
+  document.getElementById('timer-start').value = isoToLocalInput(startIso);
+  document.getElementById('timer-end').value = isoToLocalInput(endIso);
+  document.getElementById('timer-modal').classList.add('open');
+}
+
+function closeTimerModal() {
+  activeTimerSectionId = null;
+  document.getElementById('timer-modal').classList.remove('open');
+}
+
+function isoToLocalInput(iso) {
+  if (!iso) return '';
+  // Accept both "YYYY-MM-DDTHH:MM:SS" and full ISO with timezone.
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+async function saveTimer() {
+  if (!activeTimerSectionId) return;
+  const formation_start = document.getElementById('timer-start').value || null;
+  const formation_end = document.getElementById('timer-end').value || null;
+  const btn = document.querySelector('#timer-modal button.btn.btn-primary');
+  if (btn) btn.disabled = true;
+  try {
+    // Keep existing limit unchanged by reading from cached courses list.
+    let team_size_limit = 4;
+    for (const c of courses) {
+      for (const s of (c.sections || [])) {
+        if (s.id == activeTimerSectionId) team_size_limit = parseInt(s.team_size_limit || 4);
+      }
+    }
+    await api(`/api/admin/sections/${activeTimerSectionId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ team_size_limit, formation_start, formation_end }),
+    });
+    toast('success', 'Timer Updated', 'Formation window saved.');
+    closeTimerModal();
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Update Failed', e.message);
+  }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function deleteCourse(courseId, courseName) {
+  if (!confirm(`Remove course "${courseName}" and all its sections/teams?`)) return;
+  try {
+    await api(`/api/admin/courses/${courseId}`, { method: 'DELETE' });
+    toast('success', 'Course Removed', `"${courseName}" deleted successfully.`);
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Delete Failed', e.message);
+  }
+}
+
+async function deleteSection(sectionId, sectionName) {
+  if (!confirm(`Remove section "${sectionName}" and related teams/requests?`)) return;
+  try {
+    await api(`/api/admin/sections/${sectionId}`, { method: 'DELETE' });
+    toast('success', 'Section Removed', `"${sectionName}" deleted successfully.`);
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Delete Failed', e.message);
+  }
+}
+
+async function deleteLead(leadId, leadName, sectionCount) {
+  const n = typeof sectionCount === 'number' ? sectionCount : 1;
+  const msg = n > 1
+    ? `Remove team lead "${leadName}" from ALL courses? This will delete their account and disband every team they lead.`
+    : `Remove team lead "${leadName}"? This will also remove all teams they lead.`;
+  if (!confirm(msg)) return;
+  try {
+    await api(`/api/admin/leads/${leadId}`, { method: 'DELETE' });
+    toast('success', 'Lead Removed', `"${leadName}" deleted successfully.`);
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Delete Failed', e.message);
+  }
+}
+
+async function removeLeadFromSection(leadId, sectionId, courseName, leadName) {
+  if (!confirm(`Remove "${leadName}" as team lead for "${courseName}"? Their team for this section will be disbanded.`)) return;
+  try {
+    const data = await api(`/api/admin/leads/${leadId}/sections/${sectionId}`, { method: 'DELETE' });
+    if (data.removed_account) {
+      toast('success', 'Lead removed', `"${leadName}" had no remaining assignments; their account was deleted.`);
+    } else {
+      toast('success', 'Updated', `"${leadName}" is no longer lead for ${courseName}.`);
+    }
+    refreshAll();
+  } catch (e) {
+    toast('error', 'Remove Failed', e.message);
+  }
+}
+
+async function createLead() {
+  const section_ids = Array.from(document.querySelectorAll('.lead-sec:checked')).map(x => parseInt(x.value));
+  const payload = {
+    name: document.getElementById('lead-name').value.trim(),
+    email: document.getElementById('lead-email').value.trim().toLowerCase(),
+    employee_id: document.getElementById('lead-id').value.trim() || null,
+    password: document.getElementById('lead-password').value,
+    section_ids,
+  };
+  if (!payload.name || !payload.email) {
+    return toast('warning', 'Missing fields', 'Name and email are required.');
+  }
+  if (section_ids.length === 0) {
+    return toast('warning', 'No sections', 'Assign at least one section.');
+  }
+  const btn = document.querySelector('button[onclick="createLead()"]');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/api/admin/leads', { method: 'POST', body: JSON.stringify(payload) });
+    ['lead-name', 'lead-email', 'lead-id', 'lead-password'].forEach(id => document.getElementById(id).value = '');
+    document.querySelectorAll('.lead-sec').forEach(c => c.checked = false);
+    toast('success', 'Lead Created', 'Lead account and section teams created.');
+    refreshAll();
+  } catch (e) { toast('error', 'Create Failed', e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function openRosterModal(sectionId) {
+  activeRosterSectionId = sectionId;
+  console.log('[DEBUG] Opening Roster for Section ID:', sectionId);
+  try {
+    const url = `${API}/api/admin/sections/${sectionId}/roster`;
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(`API Error ${res.status}: ${data.detail || 'Not Found'}\nURL: ${url}`);
+    }
+    
+    document.getElementById('roster-title').textContent = `${data.course_name} · ${data.section_name}`;
+    document.getElementById('roster-sub').textContent = `Spreadsheet view for ${data.roster.length} members`;
+    
+    const body = document.getElementById('roster-body');
+    body.innerHTML = data.roster.map(r => `
+      <tr>
+        <td><span class="role-badge ${r.role === 'Lead' ? 'role-lead' : 'role-member'}">${r.role}</span></td>
+        <td contenteditable="true" onblur="saveMemberChange(${r.user_id}, this, 'name')" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${r.name}</td>
+        <td class="tiny" contenteditable="true" onblur="saveMemberChange(${r.user_id}, this, 'student_id')" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${r.student_id || ''}</td>
+        <td class="tiny">${r.email}</td>
+        <td style="font-weight:600;">${r.team_name}</td>
+        <td><span class="tiny" style="color:var(--emerald);">${r.status}</span></td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-3);">No members enrolled in this section yet.</td></tr>';
+    
+    document.getElementById('export-csv-btn').onclick = () => {
+      window.open(`${API}/api/admin/sections/${sectionId}/roster/csv?token=${encodeURIComponent(token)}`, '_blank');
+    };
+    
+    document.getElementById('roster-modal').classList.add('open');
+  } catch (e) {
+    console.error('[ROSTER ERROR]', e);
+    toast('error', 'Roster Load Failed', e.message);
+  }
+}
+
+async function saveMemberChange(userId, el, field) {
+  const val = el.innerText.trim();
+  try {
+    await api(`/api/admin/roster/member/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ [field]: val })
+    });
+    el.style.color = 'var(--emerald)';
+    setTimeout(() => { el.style.color = ''; }, 1000);
+  } catch (e) {
+    toast('error', 'Save Failed', e.message);
+    el.style.color = 'var(--rose)';
+  }
+}
+
+function closeRosterModal() { 
+  activeRosterSectionId = null;
+  document.getElementById('roster-modal').classList.remove('open'); 
+}
+
+function logout() {
+  localStorage.clear();
+  // Redirect to the main site root or the specific static path
+  window.location.href = '/';
+}
+
+document.getElementById('forgot-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'forgot-modal') closeForgotModal();
+});
+
+const params = new URLSearchParams(window.location.search);
+const resetToken = params.get('reset_token');
+if (resetToken) {
+  const newPass = prompt('Enter new password (minimum 8 characters):');
+  if (newPass && newPass.length >= 8) {
+    fetch(`${API}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: resetToken, new_password: newPass }),
+    }).then(async (r) => {
+      const d = await r.json();
+      if (r.ok) alert('Password reset successful. Please sign in.');
+      else alert(d.detail || 'Reset failed.');
+      window.location.search = '';
+    });
+  }
+}
+
+if (token && localStorage.getItem('role') === 'admin') {
+  document.getElementById('admin-user-name').textContent = localStorage.getItem('user_name') || 'Admin';
+  showDashboard();
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = saved === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+}
+</script>
+</body>
+</html>

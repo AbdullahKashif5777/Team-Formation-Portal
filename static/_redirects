@@ -1,0 +1,10 @@
+# Publish directory is `static/` → these paths match FastAPI-style routes on Netlify.
+
+/lead           /lead.html           200
+/member         /member.html         200
+/admin          /admin.html          200
+/roster         /roster.html         200
+/select-portal  /select-portal.html  200
+
+# HTML references /static/style.css (same as monolithic app). Map to files in site root.
+/static/*       /:splat              200

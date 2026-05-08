@@ -1,0 +1,62 @@
+"""
+Smoke tests: database engine connectivity, FastAPI app, and CORS middleware.
+
+Run from project root: pytest tests/ -v
+Requires DATABASE_URL and SECRET_KEY in the environment (e.g. via .env).
+"""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy import text
+
+
+@pytest.fixture(scope="module")
+def client():
+    """Loads app (runs startup: create_tables)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def test_database_engine_select_one():
+    from app.core.database import engine
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT 1")).scalar_one() == 1
+
+
+def test_engine_is_postgresql_with_psycopg2_when_url_is_postgres():
+    from app.core.database import DATABASE_URL, engine
+
+    if not DATABASE_URL.startswith("postgresql"):
+        pytest.skip("DATABASE_URL is not PostgreSQL in this environment")
+    assert engine.url.drivername == "postgresql+psycopg2"
+
+
+def test_openapi_schema(client):
+    r = client.get("/openapi.json")
+    assert r.status_code == 200
+    body = r.json()
+    assert "openapi" in body
+    assert "paths" in body
+
+
+def test_root_or_static_served(client):
+    r = client.get("/")
+    assert r.status_code == 200
+
+
+def test_cors_preflight_get_docs(client):
+    r = client.options(
+        "/api/docs",
+        headers={
+            "Origin": "http://localhost:8000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.status_code in (200, 204)
+    allow = {k.lower(): v for k, v in r.headers.items()}
+    assert "access-control-allow-origin" in allow
