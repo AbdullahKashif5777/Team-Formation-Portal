@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>UMT Team Portal · Roster Sheet</title>
-  <link rel="stylesheet" href="/static/style.css?v=14"/>
+  <link rel="stylesheet" href="/static/style.css?v=15"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.js"></script>
@@ -14,7 +14,15 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
     html, body { height: 100%; overflow: hidden; }
-    .roster-page { display: flex; flex-direction: column; height: 100vh; }
+    .roster-page { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+    @media (max-width: 768px) {
+      html { height: -webkit-fill-available; }
+      .roster-page {
+        min-height: -webkit-fill-available;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      .roster-toolbar { gap: 8px !important; }
+    }
 
     /* ── Toolbar ── */
     .roster-toolbar {

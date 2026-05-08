@@ -1378,3 +1378,238 @@ html[data-theme="light"] .theme-toggle:disabled {
   color: #94a3b8 !important;
   opacity: 1 !important;
 }
+
+/* ==========================================================================
+   Mobile & touch — must stay LAST so layout overrides theme !important rules
+   ========================================================================== */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+.theme-float-corner {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top, 0px));
+  right: max(14px, env(safe-area-inset-right, 0px));
+  z-index: 1000;
+}
+
+@media (max-width: 768px) {
+  #toast-container {
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    top: max(12px, env(safe-area-inset-top, 0px));
+    max-width: none;
+    width: auto;
+  }
+
+  .navbar {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    padding: 10px 14px !important;
+    align-items: flex-start;
+  }
+
+  .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .brand-name {
+    font-size: 1rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: min(58vw, 260px);
+  }
+
+  .nav-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .nav-user {
+    max-width: min(42vw, 200px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .realtime-bar {
+    flex-shrink: 0;
+  }
+
+  .portal-layout {
+    padding: 12px !important;
+    gap: 16px !important;
+  }
+
+  .portal-3col {
+    grid-template-columns: 1fr !important;
+  }
+
+  .modal-overlay {
+    padding: 12px;
+    align-items: flex-end;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal {
+    max-height: min(88vh, 100dvh - 32px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 20px 16px !important;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .modal-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .panel-header {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px;
+  }
+
+  .team-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 10px;
+  }
+
+  .request-actions {
+    flex-wrap: wrap;
+  }
+
+  .request-actions .btn {
+    flex: 1 1 auto;
+    min-width: 120px;
+    justify-content: center;
+  }
+
+  .auth-card {
+    padding: 24px 18px !important;
+  }
+
+  .auth-page {
+    padding: 16px 12px !important;
+    align-items: flex-start;
+    padding-top: max(52px, env(safe-area-inset-top)) !important;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+
+  .stat-row {
+    flex-direction: column;
+  }
+
+  .stat-card {
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .section-tabs {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    max-width: none !important;
+    width: 100%;
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .section-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .invite-row {
+    flex-wrap: wrap;
+    align-items: flex-start !important;
+  }
+
+  .invite-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-stat-wrap {
+    padding: 0 12px !important;
+  }
+
+  .admin-btn-group {
+    margin-left: 0 !important;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .form-input,
+  .search-input,
+  select.form-input,
+  textarea.form-input,
+  .invite-search {
+    font-size: 16px !important;
+  }
+
+  .roster-toolbar {
+    padding: 10px 12px !important;
+  }
+
+  .toolbar-right {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .info-bar {
+    padding: 8px 12px !important;
+  }
+
+  .status-banner {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .btn,
+  .tab-btn {
+    min-height: 44px;
+  }
+
+  .btn-sm {
+    min-height: 40px;
+  }
+
+  .btn-logout {
+    min-height: 44px;
+    padding: 10px 14px !important;
+  }
+
+  .theme-toggle {
+    min-height: 44px;
+    padding: 8px 14px !important;
+  }
+
+  .member-remove-btn {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    margin-left: 0 !important;
+    margin-top: 8px;
+  }
+
+  .member-card {
+    flex-wrap: wrap;
+  }
+}
