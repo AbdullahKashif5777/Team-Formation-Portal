@@ -95,6 +95,21 @@ app.include_router(roster_sheet.router)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# HTML uses /config.js and /api-runtime.js (Netlify publish root = static/). FastAPI only had
+# /static/... so those paths 404 on DO/uvicorn; serve the same files at the root paths too.
+@app.get("/config.js", include_in_schema=False)
+def config_js():
+    return FileResponse(
+        os.path.join(STATIC_DIR, "config.js"), media_type="application/javascript; charset=utf-8"
+    )
+
+
+@app.get("/api-runtime.js", include_in_schema=False)
+def api_runtime_js():
+    return FileResponse(
+        os.path.join(STATIC_DIR, "api-runtime.js"), media_type="application/javascript; charset=utf-8"
+    )
+
 
 @app.on_event("startup")
 def startup():
