@@ -115,18 +115,14 @@ def api_runtime_js():
 def startup():
     create_tables()
     log_db_healthcheck()
-    if app_settings.RESEND_API_KEY:
-        logger.info("Outbound email via Resend API (HTTPS); EMAIL_FROM must use a Resend-verified domain.")
-    elif app_settings.smtp_configured:
+    if app_settings.smtp_configured:
         logger.info(
-            "Outbound email via SMTP %s:%s (blocked on some free hosts — use RESEND_API_KEY if sends fail).",
+            "Outbound email (SMTP) enabled via %s:%s",
             app_settings.SMTP_HOST,
             app_settings.SMTP_PORT,
         )
     else:
-        logger.warning(
-            "Outbound email disabled: set RESEND_API_KEY or SMTP_USER + SMTP_PASSWORD."
-        )
+        logger.warning("Outbound email disabled: set SMTP_USER and SMTP_PASSWORD.")
 
 
 @app.get("/", include_in_schema=False)

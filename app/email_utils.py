@@ -64,7 +64,10 @@ def _portal_block_html() -> str:
 
 def _send(to_email: str, subject: str, html_body: str):
     if not settings.smtp_configured:
-        logger.warning("Email not configured (set SMTP_USER and SMTP_PASSWORD) – skipping send to %s", to_email)
+        logger.warning(
+            "Email not configured (set SMTP_USER and SMTP_PASSWORD) – skipping send to %s",
+            to_email,
+        )
         return
     try:
         msg = MIMEMultipart("alternative")
