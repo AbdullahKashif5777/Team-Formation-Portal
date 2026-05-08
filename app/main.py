@@ -70,8 +70,6 @@ async def log_slow_requests(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # Fail closed: never crash the process on unexpected errors.
-    # Log the real exception so host logs (Render, DO, etc.) show the cause of 500s.
-    logger.error("Unhandled %s %s: %s", request.method, request.url.path, exc, exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 app.add_middleware(
@@ -95,21 +93,6 @@ app.include_router(roster_sheet.router)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# HTML uses /config.js and /api-runtime.js (Netlify publish root = static/). FastAPI only had
-# /static/... so those paths 404 on DO/uvicorn; serve the same files at the root paths too.
-@app.get("/config.js", include_in_schema=False)
-def config_js():
-    return FileResponse(
-        os.path.join(STATIC_DIR, "config.js"), media_type="application/javascript; charset=utf-8"
-    )
-
-
-@app.get("/api-runtime.js", include_in_schema=False)
-def api_runtime_js():
-    return FileResponse(
-        os.path.join(STATIC_DIR, "api-runtime.js"), media_type="application/javascript; charset=utf-8"
-    )
-
 
 @app.on_event("startup")
 def startup():
@@ -122,7 +105,9 @@ def startup():
             app_settings.SMTP_PORT,
         )
     else:
-        logger.warning("Outbound email disabled: set SMTP_USER and SMTP_PASSWORD.")
+        logger.warning(
+            "Outbound email disabled: set SMTP_USER and SMTP_PASSWORD on the server to send mail."
+        )
 
 
 @app.get("/", include_in_schema=False)

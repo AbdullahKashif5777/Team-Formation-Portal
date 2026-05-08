@@ -78,7 +78,7 @@ class Settings:
 
     @property
     def smtp_configured(self) -> bool:
-        """True when SMTP_USER and SMTP_PASSWORD are set (SMTP transport available)."""
+        """Both user and app password must be set for outbound mail."""
         u = (self.SMTP_USER or "").strip()
         p = (self.SMTP_PASSWORD or "").strip()
         return bool(u and p)
