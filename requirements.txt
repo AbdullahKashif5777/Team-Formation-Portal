@@ -4,6 +4,8 @@ sqlalchemy==2.0.49
 pydantic-settings==2.2.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# Pin bcrypt: 4.1+ rejects >72-byte secrets strictly; passlib 1.7.4's bcrypt init hits that on Python 3.14+.
+bcrypt==4.0.1
 python-dotenv==1.0.1
 python-multipart==0.0.9
 aiofiles==23.2.1

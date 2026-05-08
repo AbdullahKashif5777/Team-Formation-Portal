@@ -29,12 +29,17 @@ def validate_student_id(sid: str) -> bool:
     return bool(STUDENT_ID_RE.match(sid))
 
 
+def _bcrypt_secret_bytes(plain: str) -> bytes:
+    """Bcrypt uses at most the first 72 bytes of the UTF-8 password (legacy truncation)."""
+    return plain.encode("utf-8")[:72]
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_bcrypt_secret_bytes(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_bcrypt_secret_bytes(plain), hashed)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
