@@ -13,6 +13,7 @@ from app.core.database import log_db_healthcheck
 from app.routers import auth, teams, ws, admin, roster
 from app.routers import roster_sheet
 from app.core.config import env_csv, load_env
+from app.config import settings as app_settings
 
 load_env()
 
@@ -97,6 +98,16 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def startup():
     create_tables()
     log_db_healthcheck()
+    if app_settings.smtp_configured:
+        logger.info(
+            "Outbound email (SMTP) enabled via %s:%s",
+            app_settings.SMTP_HOST,
+            app_settings.SMTP_PORT,
+        )
+    else:
+        logger.warning(
+            "Outbound email disabled: set SMTP_USER and SMTP_PASSWORD on the server to send mail."
+        )
 
 
 @app.get("/", include_in_schema=False)

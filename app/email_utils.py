@@ -1,3 +1,4 @@
+import os
 import smtplib
 import logging
 import html as html_module
@@ -32,6 +33,25 @@ def _public_portal_url() -> str:
     return (settings.PUBLIC_BASE_URL or "").strip().rstrip("/")
 
 
+def _smtp_login_password() -> str:
+    """
+    Gmail app passwords are often pasted as four groups with spaces; SMTP login expects
+    the 16-character secret without spaces.
+    """
+    p = (settings.SMTP_PASSWORD or "").strip()
+    host = (settings.SMTP_HOST or "").lower().rstrip(".")
+    if "gmail.com" in host and " " in p:
+        p = "".join(p.split())
+    return p
+
+
+def _smtp_timeout_s() -> float:
+    try:
+        return float(os.getenv("SMTP_TIMEOUT") or "30")
+    except ValueError:
+        return 30.0
+
+
 def _portal_block_html() -> str:
     base = _public_portal_url()
     if base:
@@ -52,13 +72,38 @@ def _send(to_email: str, subject: str, html_body: str):
         msg["From"] = settings.EMAIL_FROM
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(host=settings.SMTP_HOST, port=int(settings.SMTP_PORT)) as server:
+        timeout = _smtp_timeout_s()
+        mail_from = (settings.SMTP_USER or "").strip()
+        pw = _smtp_login_password()
+        debug = (os.getenv("SMTP_DEBUG") or "").strip().lower() in ("1", "true", "yes")
+
+        with smtplib.SMTP(host=settings.SMTP_HOST, port=int(settings.SMTP_PORT), timeout=timeout) as server:
+            if debug:
+                server.set_debuglevel(1)
+            server.ehlo()
             server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, to_email, msg.as_string())
+            server.ehlo()
+            server.login(mail_from, pw)
+            server.sendmail(mail_from, [to_email], msg.as_string())
         logger.info("Email sent to %s", to_email)
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(
+            "SMTP authentication failed for host=%s (check SMTP_USER and SMTP_PASSWORD / Gmail app password): %s",
+            settings.SMTP_HOST,
+            e,
+        )
+    except smtplib.SMTPException as e:
+        logger.error("SMTP error sending to %s: %s", to_email, e)
+    except OSError as e:
+        logger.error(
+            "SMTP network/TLS error to %s:%s (timeout=%ss): %s",
+            settings.SMTP_HOST,
+            settings.SMTP_PORT,
+            _smtp_timeout_s(),
+            e,
+        )
     except Exception as e:
-        logger.error("Failed to send email: %s", e)
+        logger.error("Failed to send email to %s: %s", to_email, e)
 
 
 _TMPL = """
