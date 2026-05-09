@@ -18,7 +18,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer()
 
 EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@umt\.edu\.pk$", re.IGNORECASE)
-STUDENT_ID_RE = re.compile(r"^[Ff]\d{10}$")
+STUDENT_ID_RE = re.compile(r"^[FfSs]\d{10}$")
 
 
 def validate_umt_email(email: str) -> bool:

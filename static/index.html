@@ -188,8 +188,8 @@
         <div class="form-group" id="sid-group">
           <label class="form-label" for="reg-sid">Student ID</label>
           <input id="reg-sid" class="form-input" type="text"
-                 placeholder="F2023065011" maxlength="11"/>
-          <span class="form-hint">Starts with F + 10 digits. Not required for Team Leads.</span>
+                 placeholder="F2023065011 or S2023065011" maxlength="11"/>
+          <span class="form-hint">F or S + 10 digits (fall / spring). Not required for Team Leads.</span>
           <span id="sid-error" class="form-error"></span>
         </div>
         <div class="form-group">
@@ -464,7 +464,7 @@
 
     if (!name || !email || !password) { showError(errEl, 'Name, email and password are required'); return; }
     if (!email.toLowerCase().endsWith('@umt.edu.pk')) { showError(errEl, 'Email must end with @umt.edu.pk'); return; }
-    if (sid && !/^[Ff]\d{10}$/.test(sid)) { showError(sidErr, 'Format: F + 10 digits (e.g. F2023065011)'); return; }
+    if (sid && !/^[FfSs]\d{10}$/.test(sid)) { showError(sidErr, 'Format: F or S + 10 digits (e.g. F2023065011)'); return; }
     if (password.length < 8) { showError(errEl, 'Password must be at least 8 characters'); return; }
     if (sectionIds.length === 0) { showError(errEl, 'Please select at least one course and section'); return; }
 

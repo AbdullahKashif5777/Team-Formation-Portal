@@ -38,7 +38,7 @@ class RegisterRequest(BaseModel):
     @classmethod
     def sid_format(cls, v):
         if v and not validate_student_id(v):
-            raise ValueError("Student ID must start with F followed by 10 digits (e.g. F2023065011)")
+            raise ValueError("Student ID must start with F or S followed by 10 digits (e.g. F2023065011 or S2023065011)")
         return v.upper() if v else v
 
 
