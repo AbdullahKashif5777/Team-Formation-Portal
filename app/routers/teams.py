@@ -648,6 +648,7 @@ async def send_join_request(
                 team.name,
                 team.section.course.name,
                 team.section.name,
+                user.email,
             )
             email_utils.send_async(
                 email_utils.send_join_request_confirmation_to_member,
@@ -708,6 +709,7 @@ async def send_join_request(
             team.name,
             team.section.course.name,
             team.section.name,
+            user.email,
         )
         email_utils.send_async(
             email_utils.send_join_request_confirmation_to_member,
@@ -840,6 +842,7 @@ async def accept_request(
             team.name,
             team.section.course.name,
             team.section.name,
+            member.email,
         )
 
     # Google Sheets sync
@@ -1260,6 +1263,7 @@ async def accept_lead_invite(
                 team.name,
                 team.section.course.name if team.section and team.section.course else "",
                 team.section.name if team.section else "",
+                user.email,
             )
 
     _sync_sheet(team)
@@ -1323,6 +1327,8 @@ async def decline_lead_invite(
             team.name,
             cn,
             sn,
+            user.student_id,
+            user.email,
         )
 
     return {"message": "Invite declined"}
@@ -1398,6 +1404,9 @@ async def remove_member(
                     removed_member_name,
                     team.name,
                     team.section.course.name,
+                    team.section.name,
+                    removed_member_sid,
+                    removed_member_email,
                 )
 
         _notify_admins(db, "admin_team_activity", {

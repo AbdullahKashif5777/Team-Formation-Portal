@@ -180,7 +180,10 @@ def delete_course(course_id: int, _: models.User = Depends(require_admin), db: S
                     members_to_notify.append({
                         "email": membership.member.email,
                         "name": membership.member.name,
-                        "team_name": team.name
+                        "team_name": team.name,
+                        "student_id": membership.member.student_id,
+                        "course_name": course_name,
+                        "section_name": section.name,
                     })
 
     try:
@@ -213,6 +216,9 @@ def delete_course(course_id: int, _: models.User = Depends(require_admin), db: S
                     m["email"],
                     m["name"],
                     m["team_name"],
+                    student_id=m.get("student_id"),
+                    course_name=m.get("course_name"),
+                    section_name=m.get("section_name"),
                 )
 
     except Exception as e:
@@ -339,7 +345,10 @@ def delete_section(section_id: int, _: models.User = Depends(require_admin), db:
                 members_to_notify.append({
                     "email": membership.member.email,
                     "name": membership.member.name,
-                    "team_name": team.name
+                    "team_name": team.name,
+                    "student_id": membership.member.student_id,
+                    "course_name": section.course.name if section.course else "",
+                    "section_name": section.name,
                 })
 
     try:
@@ -372,6 +381,9 @@ def delete_section(section_id: int, _: models.User = Depends(require_admin), db:
                     m["email"],
                     m["name"],
                     m["team_name"],
+                    student_id=m.get("student_id"),
+                    course_name=m.get("course_name"),
+                    section_name=m.get("section_name"),
                 )
 
     except Exception as e:
@@ -385,9 +397,10 @@ def delete_lead(lead_id: int, _: models.User = Depends(require_admin), db: Sessi
     lead = (
         db.query(models.User)
         .options(
+            selectinload(models.User.led_teams).joinedload(models.Team.section).joinedload(models.Section.course),
             selectinload(models.User.led_teams)
             .selectinload(models.Team.memberships)
-            .joinedload(models.TeamMembership.member)
+            .joinedload(models.TeamMembership.member),
         )
         .filter(models.User.id == lead_id, models.User.role == "lead")
         .first()
@@ -429,7 +442,10 @@ def delete_lead(lead_id: int, _: models.User = Depends(require_admin), db: Sessi
                 members_to_notify.append({
                     "email": membership.member.email,
                     "name": membership.member.name,
-                    "team_name": team.name
+                    "team_name": team.name,
+                    "student_id": membership.member.student_id,
+                    "course_name": team.section.course.name if team.section and team.section.course else "",
+                    "section_name": team.section.name if team.section else "",
                 })
 
     try:
@@ -454,6 +470,9 @@ def delete_lead(lead_id: int, _: models.User = Depends(require_admin), db: Sessi
                     m["email"],
                     m["name"],
                     m["team_name"],
+                    student_id=m.get("student_id"),
+                    course_name=m.get("course_name"),
+                    section_name=m.get("section_name"),
                 )
             
             # Notify Admins
@@ -523,6 +542,9 @@ def remove_lead_from_section(
                         "email": membership.member.email,
                         "name": membership.member.name,
                         "team_name": team.name,
+                        "student_id": membership.member.student_id,
+                        "course_name": sec.course.name if sec and sec.course else "",
+                        "section_name": sec.name if sec else "",
                     }
                 )
 
@@ -570,6 +592,9 @@ def remove_lead_from_section(
                 m["email"],
                 m["name"],
                 m["team_name"],
+                student_id=m.get("student_id"),
+                course_name=m.get("course_name"),
+                section_name=m.get("section_name"),
             )
         email_utils.send_async(
             email_utils.send_lead_removed_notice,
@@ -718,6 +743,7 @@ def create_lead(data: LeadCreate, _: models.User = Depends(require_admin), db: S
             lead.name,
             plain_password,
             assigned_pairs,
+            lead.student_id,
         )
 
     if settings.smtp_configured:
@@ -736,6 +762,8 @@ def create_lead(data: LeadCreate, _: models.User = Depends(require_admin), db: S
             lead.name,
             sections_str,
             is_new_account=was_new_lead_account,
+            student_id=lead.student_id,
+            assignments=assigned_pairs,
         )
         for admin_email in settings.admin_emails_list:
             email_utils.send_async(
@@ -744,6 +772,8 @@ def create_lead(data: LeadCreate, _: models.User = Depends(require_admin), db: S
                 lead.name,
                 lead.email,
                 sections_str,
+                student_id=lead.student_id,
+                assignments=assigned_pairs,
             )
 
     return {"message": "Lead created successfully"}

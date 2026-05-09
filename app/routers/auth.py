@@ -273,6 +273,7 @@ def register(data: RegisterRequest, request: Request, db: Session = Depends(get_
                 verify_link,
                 course_name,
                 section_name,
+                data.student_id.upper(),
             )
 
         return {"message": "Verification email sent. Please check your inbox to create your account."}

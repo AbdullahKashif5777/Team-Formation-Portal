@@ -135,6 +135,10 @@ _MASTER_EMAIL_HTML = """
             <td style="padding: 10px 12px; background: #ffffff; border-bottom: 1px solid #e5e7eb;">{{ student_id }}</td>
           </tr>
           <tr>
+            <td style="padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 38%; font-weight: 700;">Email</td>
+            <td style="padding: 10px 12px; background: #ffffff; border-bottom: 1px solid #e5e7eb;">{{ contact_email }}</td>
+          </tr>
+          <tr>
             <td style="padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 38%; font-weight: 700;">Course</td>
             <td style="padding: 10px 12px; background: #ffffff; border-bottom: 1px solid #e5e7eb;">{{ course_name }}</td>
           </tr>
@@ -165,6 +169,7 @@ _REGISTRATION_BODY_HTML = """
   <p>Your registration in the <strong>UMT Team Formation Portal</strong> is complete.</p>
   <p><strong>Account</strong><br>
     Email: {{ user_email }}<br>
+    {% if show_student_id_row %}Student ID: {{ student_id }}<br>{% endif %}
     Role: {{ role }}
   </p>
   <p>If you did not register, contact your course administrator.</p>
@@ -188,6 +193,7 @@ def build_standard_template_data(
     course_name: str | None,
     section_name: str | None,
     event_type: str,
+    contact_email: str | None = None,
     **extra,
 ) -> dict:
     """
@@ -199,6 +205,7 @@ def build_standard_template_data(
         "course_name": _norm(course_name),
         "section_name": _norm(section_name),
         "event_type": _norm(event_type),
+        "contact_email": _norm(contact_email),
     }
     data.update(extra)
     return data
@@ -236,9 +243,11 @@ def build_registration_email_context(
         course_name=course_name,
         section_name=section_name,
         event_type="New Registration",
+        contact_email=user_email,
         team_lead_name=_norm(team_lead_name) if team_lead_name else "Not assigned yet",
         user_email=_norm(user_email),
         role=_norm(role),
+        show_student_id_row=bool((student_id or "").strip()),
     )
 
 
@@ -250,6 +259,7 @@ def send_join_request_to_lead(
     team_name: str,
     course_name: str,
     section_name: str,
+    member_email: str | None = None,
 ):
     template_data = build_standard_template_data(
         student_name=member_name,
@@ -257,6 +267,7 @@ def send_join_request_to_lead(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Join Request",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -266,6 +277,7 @@ def send_join_request_to_lead(
           <p>Hello {{ lead_name }},</p>
           <p>A student has <strong>requested to join</strong> your team.</p>
           <p><strong>Team:</strong> {{ team_name }}</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>Open the portal as <strong>Team Lead</strong> to accept or decline this request.</p>
         </div>
         """,
@@ -289,6 +301,7 @@ def send_join_request_confirmation_to_member(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Join Request Submitted",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -298,6 +311,7 @@ def send_join_request_confirmation_to_member(
           <p>Hello {{ student_name }},</p>
           <p>Your request to join <strong>{{ team_name }}</strong> has been sent.</p>
           <p><strong>Team lead:</strong> {{ lead_name }}</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>You will receive another email when the lead accepts or declines your request.</p>
         </div>
         """,
@@ -321,6 +335,7 @@ def send_accepted_to_member(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Enrollment Confirmed",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -330,6 +345,7 @@ def send_accepted_to_member(
           <p>Hello {{ student_name }},</p>
           <p>Great news — you have been <strong>accepted</strong> into team <strong>{{ team_name }}</strong>.</p>
           <p><strong>Team lead:</strong> {{ lead_name }}</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>Log in as a <strong>member</strong> to see your team.</p>
         </div>
         """,
@@ -353,6 +369,7 @@ def send_rejected_to_member(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Join Request Declined",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -361,6 +378,7 @@ def send_rejected_to_member(
         <div>
           <p>Hello {{ student_name }},</p>
           <p>Your request to join <strong>{{ team_name }}</strong> was <strong>not accepted</strong> by {{ lead_name }}.</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>You can browse other teams and send a new request if formation is still open.</p>
         </div>
         """,
@@ -384,6 +402,7 @@ def send_removed_from_team_to_member(
         course_name=course_name,
         section_name=section_name,
         event_type="Member Removal",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -392,6 +411,7 @@ def send_removed_from_team_to_member(
         <div>
           <p>Hello {{ student_name }},</p>
           <p>You have been removed from team <strong>{{ team_name }}</strong> by lead <strong>{{ lead_name }}</strong>.</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>If formation is still open, you may request to join another team.</p>
         </div>
         """,
@@ -407,6 +427,7 @@ def send_password_reset(email: str, name: str, reset_link: str):
         course_name=None,
         section_name=None,
         event_type="Password Reset",
+        contact_email=email,
         reset_link=reset_link,
     )
     body_html = _render_html(
@@ -466,13 +487,23 @@ def send_registration_notice(
     _send(to_email, build_subject(context), render_master_email(template_data=context, body_html=body_html))
 
 
-def send_invite_declined_to_lead(lead_email: str, lead_name: str, member_name: str, team_name: str, course_name: str, section_name: str):
+def send_invite_declined_to_lead(
+    lead_email: str,
+    lead_name: str,
+    member_name: str,
+    team_name: str,
+    course_name: str,
+    section_name: str,
+    member_id: str | None = None,
+    member_email: str | None = None,
+):
     template_data = build_standard_template_data(
         student_name=member_name,
-        student_id=None,
+        student_id=member_id,
         course_name=course_name,
         section_name=section_name,
         event_type="Team Invite Declined",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -481,6 +512,7 @@ def send_invite_declined_to_lead(lead_email: str, lead_name: str, member_name: s
         <div>
           <p>Hello {{ lead_name }},</p>
           <p><strong>{{ student_name }}</strong> declined your invitation to join <strong>{{ team_name }}</strong>.</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
         </div>
         """,
         template_data,
@@ -488,13 +520,40 @@ def send_invite_declined_to_lead(lead_email: str, lead_name: str, member_name: s
     _send(lead_email, build_subject(template_data), render_master_email(template_data=template_data, body_html=body_html))
 
 
-def send_member_removed_by_lead_to_admin(admin_email: str, lead_name: str, member_name: str, team_name: str, course_name: str):
-    body = f"""
-    <p><strong>Manual Team Removal Alert:</strong></p>
-    <p>Lead <strong>{lead_name}</strong> has removed <strong>{member_name}</strong> from team <strong>{team_name}</strong>.</p>
-    <p><strong>Course:</strong> {course_name}</p>
-    """
-    _send(admin_email, f"Admin Notice: Member removed from {team_name}", _TMPL.format(body=body))
+def send_member_removed_by_lead_to_admin(
+    admin_email: str,
+    lead_name: str,
+    member_name: str,
+    team_name: str,
+    course_name: str,
+    section_name: str | None = None,
+    member_student_id: str | None = None,
+    member_email: str | None = None,
+):
+    template_data = build_standard_template_data(
+        student_name=member_name,
+        student_id=member_student_id,
+        course_name=course_name,
+        section_name=section_name,
+        event_type="Manual Member Removal",
+        contact_email=member_email,
+        lead_name=_norm(lead_name),
+        team_name=_norm(team_name),
+    )
+    body_html = _render_html(
+        """
+        <div>
+          <p><strong>Lead action:</strong> {{ lead_name }} removed a member from team <strong>{{ team_name }}</strong>.</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
+        </div>
+        """,
+        template_data,
+    )
+    _send(
+        admin_email,
+        build_subject(template_data),
+        render_master_email(template_data=template_data, body_html=body_html),
+    )
 
 
 def send_course_section_removed_notice(admin_email: str, removed_type: str, name: str):
@@ -513,6 +572,7 @@ def send_request_accepted_to_lead(
     team_name: str,
     course_name: str,
     section_name: str,
+    member_email: str | None = None,
 ):
     template_data = build_standard_template_data(
         student_name=member_name,
@@ -520,6 +580,7 @@ def send_request_accepted_to_lead(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Enrollment Confirmed",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
     )
@@ -528,7 +589,8 @@ def send_request_accepted_to_lead(
         <div>
           <p>Hello {{ lead_name }},</p>
           <p><strong>{{ student_name }}</strong> has joined <strong>{{ team_name }}</strong>.</p>
-          <p>This email includes the student’s ID for your records.</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
+          <p>The summary table includes their student ID and email for your records.</p>
         </div>
         """,
         template_data,
@@ -553,6 +615,7 @@ def send_team_invite_to_member(
         course_name=course_name,
         section_name=section_name,
         event_type="Team Invitation",
+        contact_email=member_email,
         lead_name=_norm(lead_name),
         team_name=_norm(team_name),
         invite_message=msg,
@@ -565,6 +628,7 @@ def send_team_invite_to_member(
           {% if invite_message %}
             <p><strong>Message from your lead:</strong><br>{{ invite_message | safe }}</p>
           {% endif %}
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
           <p>Log in to the <strong>member</strong> portal to accept or decline the invite.</p>
         </div>
         """,
@@ -579,24 +643,60 @@ def send_lead_assigned_notice(
     sections_summary: str,
     *,
     is_new_account: bool,
+    student_id: str | None = None,
+    assignments: list[dict] | None = None,
 ):
     """
     Email the lead when an admin assigns them as team lead for one or more sections.
     """
-    acct = (
+    pairs = []
+    for a in assignments or []:
+        try:
+            course = _norm((a or {}).get("course"))
+            section = _norm((a or {}).get("section"))
+        except Exception:
+            course, section = "—", "—"
+        pairs.append({"course": course, "section": section})
+    first = pairs[0] if pairs else {"course": "—", "section": "—"}
+    template_data = build_standard_template_data(
+        student_name=lead_name,
+        student_id=student_id,
+        course_name=first.get("course"),
+        section_name=first.get("section"),
+        event_type="Team Lead Assignment",
+        contact_email=lead_email,
+    )
+    acct_html = (
         "<p>An account was created for you. Use the <strong>password set by the administrator</strong> (or reset it from the login page).</p>"
         if is_new_account
         else "<p>Your existing account was updated with Team Lead access for the section(s) below.</p>"
     )
-    body = f"""
-    <p>Hello {lead_name},</p>
-    <p>You have been assigned as a <strong>Team Lead</strong> in the UMT Team Formation Portal.</p>
-    {acct}
-    <p><strong>Your sections</strong><br>{sections_summary}</p>
-    {_portal_block_html()}
-    <p>After signing in, open the <strong>Team Lead</strong> portal to manage your team and join requests.</p>
-    """
-    _send(lead_email, "You are a Team Lead — UMT Team Portal", _TMPL.format(body=body))
+    summary_para = (
+        f"<p><strong>All assigned sections</strong><br>{html_module.escape(sections_summary)}</p>"
+        if sections_summary
+        else ""
+    )
+    body_html = _render_html(
+        """
+        <div>
+          <p>Hello {{ lead_name }},</p>
+          <p>You have been assigned as a <strong>Team Lead</strong> in the UMT Team Formation Portal.</p>
+          """ + acct_html + """
+          {{ summary_para | safe }}
+          {% if pairs and (pairs | length) > 1 %}
+            <p><strong>Assigned sections</strong></p>
+            <ul>
+              {% for a in pairs %}
+                <li>Course: <strong>{{ a.course }}</strong>, Section: <strong>{{ a.section }}</strong></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          <p>After signing in, open the <strong>Team Lead</strong> portal to manage your team and join requests.</p>
+        </div>
+        """,
+        {**template_data, "lead_name": _norm(lead_name), "pairs": pairs, "summary_para": summary_para},
+    )
+    _send(lead_email, build_subject(template_data), render_master_email(template_data=template_data, body_html=body_html))
 
 
 def send_lead_welcome_email(
@@ -604,6 +704,7 @@ def send_lead_welcome_email(
     lead_name: str,
     password: str,
     assignments: list[dict],
+    student_id: str | None = None,
 ):
     """
     One-time welcome email for a newly created Team Lead account.
@@ -618,16 +719,15 @@ def send_lead_welcome_email(
             course, section = "—", "—"
         pairs.append({"course": course, "section": section})
 
-    lead_id = (email.split("@", 1)[0] if email else "").strip().upper() or "—"
-
     # Use the first assignment for the standard subject fields, but include all in the body.
     first = pairs[0] if pairs else {"course": "—", "section": "—"}
     template_data = build_standard_template_data(
         student_name=lead_name,
-        student_id=None,
+        student_id=student_id,
         course_name=first.get("course"),
         section_name=first.get("section"),
         event_type="Team Lead Account Created",
+        contact_email=email,
         lead_name=_norm(lead_name),
     )
     body_html = _render_html(
@@ -635,23 +735,18 @@ def send_lead_welcome_email(
         <div>
           <p>Hello {{ lead_name }},</p>
           <p>Your Admin has registered you as a <strong>Team Lead</strong>.</p>
-          <p>
-            Login with password: <code>{{ password }}</code><br>
-            ID: <strong>{{ lead_id }}</strong>
-          </p>
-          <p><strong>Assignments</strong></p>
+          <p>Login with password: <code>{{ password | e }}</code></p>
+          <p><strong>Assigned sections</strong></p>
           <ul>
             {% for a in assignments %}
               <li>Course: <strong>{{ a.course }}</strong>, Section: <strong>{{ a.section }}</strong></li>
             {% endfor %}
           </ul>
-          {{ portal_block | safe }}
         </div>
         """,
         {
             **template_data,
             "password": password,
-            "lead_id": lead_id,
             "assignments": pairs,
         },
     )
@@ -670,16 +765,18 @@ def send_member_verification_email(
     verify_link: str,
     course: str,
     section: str,
+    student_id: str | None = None,
 ):
     """
     Member-only: verification email for account creation.
     """
     template_data = build_standard_template_data(
         student_name=name,
-        student_id=None,
+        student_id=student_id,
         course_name=course,
         section_name=section,
         event_type="Email Verification",
+        contact_email=email,
         user_email=_norm(email),
     )
     body_html = _render_html(
@@ -697,7 +794,6 @@ def send_member_verification_email(
             </a>
           </p>
           <p>If the button does not work, copy this link into your browser:<br><code>{{ verify_link }}</code></p>
-          {{ portal_block | safe }}
         </div>
         """,
         {**template_data, "verify_link": verify_link},
@@ -705,15 +801,59 @@ def send_member_verification_email(
     _send(email, build_subject(template_data), render_master_email(template_data=template_data, body_html=body_html))
 
 
-def send_admin_new_lead_notice(admin_email: str, lead_name: str, lead_user_email: str, sections_summary: str):
-    body = f"""
-    <p><strong>Team lead assigned</strong></p>
-    <p>Name: {lead_name}<br>
-    Email: {lead_user_email}<br>
-    Sections: {sections_summary}</p>
-    {_portal_block_html()}
-    """
-    _send(admin_email, f"Admin notice: lead {lead_name}", _TMPL.format(body=body))
+def send_admin_new_lead_notice(
+    admin_email: str,
+    lead_name: str,
+    lead_user_email: str,
+    sections_summary: str,
+    *,
+    student_id: str | None = None,
+    assignments: list[dict] | None = None,
+):
+    pairs = []
+    for a in assignments or []:
+        try:
+            course = _norm((a or {}).get("course"))
+            section = _norm((a or {}).get("section"))
+        except Exception:
+            course, section = "—", "—"
+        pairs.append({"course": course, "section": section})
+    first = pairs[0] if pairs else {}
+    template_data = build_standard_template_data(
+        student_name=lead_name,
+        student_id=student_id,
+        course_name=first.get("course") if first else None,
+        section_name=first.get("section") if first else None,
+        event_type="Team Lead Assigned (Admin Notice)",
+        contact_email=lead_user_email,
+    )
+    summary_para = (
+        f"<p><strong>All assigned sections</strong><br>{html_module.escape(sections_summary)}</p>"
+        if sections_summary
+        else ""
+    )
+    body_html = _render_html(
+        """
+        <div>
+          <p>A team lead was assigned in the UMT Team Formation Portal.</p>
+          {{ summary_para | safe }}
+          {% if pairs and (pairs | length) > 1 %}
+            <p><strong>Section list</strong></p>
+            <ul>
+              {% for a in pairs %}
+                <li>Course: <strong>{{ a.course }}</strong>, Section: <strong>{{ a.section }}</strong></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+        """,
+        {**template_data, "pairs": pairs, "summary_para": summary_para},
+    )
+    _send(
+        admin_email,
+        build_subject(template_data),
+        render_master_email(template_data=template_data, body_html=body_html),
+    )
 
 
 def send_lead_removed_notice(
@@ -728,6 +868,7 @@ def send_lead_removed_notice(
         course_name=(assignments[0].get("course") if assignments else None),
         section_name=(assignments[0].get("section") if assignments else None),
         event_type="Team Lead Assignment Removed",
+        contact_email=lead_email,
         lead_name=_norm(lead_name),
     )
     pairs = []
@@ -752,7 +893,6 @@ def send_lead_removed_notice(
             </ul>
           {% endif %}
           <p>Associated teams have been disbanded.</p>
-          {{ portal_block | safe }}
         </div>
         """,
         {**template_data, "pairs": pairs},
@@ -764,10 +904,30 @@ def send_lead_removed_notice(
     )
 
 
-def send_member_team_removed_notice(member_email: str, member_name: str, team_name: str):
-    body = f"""
-    <p>Hello {member_name},</p>
-    <p>Your team <strong>{team_name}</strong> has been disbanded by the administrator. You can now join another team.</p>
-    {_portal_block_html()}
-    """
-    _send(member_email, f"Notice: Team {team_name} disbanded", _TMPL.format(body=body))
+def send_member_team_removed_notice(
+    member_email: str,
+    member_name: str,
+    team_name: str,
+    student_id: str | None = None,
+    course_name: str | None = None,
+    section_name: str | None = None,
+):
+    template_data = build_standard_template_data(
+        student_name=member_name,
+        student_id=student_id,
+        course_name=course_name,
+        section_name=section_name,
+        event_type="Team Disbanded",
+        contact_email=member_email,
+        team_name=_norm(team_name),
+    )
+    body_html = _render_html(
+        """
+        <div>
+          <p>Hello {{ student_name }},</p>
+          <p>Your team <strong>{{ team_name }}</strong> has been disbanded by the administrator. You can now join another team.</p>
+        </div>
+        """,
+        template_data,
+    )
+    _send(member_email, build_subject(template_data), render_master_email(template_data=template_data, body_html=body_html))
