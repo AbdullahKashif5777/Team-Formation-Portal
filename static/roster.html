@@ -210,6 +210,15 @@
       html, body { overflow: visible; height: auto; }
       .roster-page { height: auto; }
       .sheet-wrap  { overflow: visible; }
+      /* Unclip scroll viewport so print/PDF includes every row (not just on-screen chunk). */
+      #roster-sheet,
+      #roster-sheet .jexcel_container,
+      #roster-sheet .jexcel_content,
+      #roster-sheet .jexcel_overflow {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+      }
       /* Jspreadsheet print-fit */
       .jexcel_content { width: 100% !important; }
       body.printing .jexcel_content {
@@ -869,6 +878,8 @@
       allowInsertColumn: false,
       allowDeleteColumn: false,
       tableOverflow: true,
+      /* Required for PDF/print: lazy loading only mounts ~100 rows in the DOM at a time. */
+      lazyLoading: false,
       tableWidth: '100%',
       license: 'free',
       formulas: true,
