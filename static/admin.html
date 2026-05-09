@@ -212,7 +212,7 @@
         <label class="form-label">Formation End</label>
         <input id="timer-end" class="form-input" type="datetime-local"/>
       </div>
-      <div class="tiny">Leave either field empty for an open-ended window.</div>
+      <div class="tiny">Times are <strong>Pakistan</strong> (<code>Asia/Karachi</code>). Leave either field empty for an open-ended window.</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="saveTimer()">Save</button>
@@ -563,12 +563,20 @@ function isoToLocalInput(iso) {
   return `${y}-${m}-${day}T${hh}:${mm}`;
 }
 
+/** datetime-local value has no TZ; send naive ISO so API treats wall time as Asia/Karachi (not browser TZ via toISOString). */
+function naivePakistanIsoFromDatetimeLocal(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return `${s}:00`;
+  return s;
+}
+
 async function saveTimer() {
   if (!activeTimerSectionId) return;
   const raw_start = document.getElementById('timer-start').value || null;
   const raw_end = document.getElementById('timer-end').value || null;
-  const formation_start = raw_start ? new Date(raw_start).toISOString() : null;
-  const formation_end = raw_end ? new Date(raw_end).toISOString() : null;
+  const formation_start = naivePakistanIsoFromDatetimeLocal(raw_start);
+  const formation_end = naivePakistanIsoFromDatetimeLocal(raw_end);
   const btn = document.querySelector('#timer-modal button.btn.btn-primary');
   if (btn) btn.disabled = true;
   try {
