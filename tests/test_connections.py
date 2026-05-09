@@ -47,6 +47,7 @@ def test_openapi_schema(client):
 def test_root_or_static_served(client):
     r = client.get("/")
     assert r.status_code == 200
+    assert "no-store" in r.headers.get("cache-control", "").lower()
 
 
 def test_root_portal_scripts_alias_served(client):

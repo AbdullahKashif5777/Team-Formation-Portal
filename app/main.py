@@ -100,6 +100,13 @@ app.include_router(roster_sheet.router)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# Avoid browsers/CDNs serving an old index.html that references broken script paths after a deploy.
+_HTML_NO_CACHE = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
+
+
+def _portal_html(filename: str) -> FileResponse:
+    return FileResponse(os.path.join(STATIC_DIR, filename), headers=dict(_HTML_NO_CACHE))
+
 
 @app.on_event("startup")
 def startup():
@@ -119,32 +126,32 @@ def startup():
 
 @app.get("/", include_in_schema=False)
 def root():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    return _portal_html("index.html")
 
 
 @app.get("/lead", include_in_schema=False)
 def lead_page():
-    return FileResponse(os.path.join(STATIC_DIR, "lead.html"))
+    return _portal_html("lead.html")
 
 
 @app.get("/member", include_in_schema=False)
 def member_page():
-    return FileResponse(os.path.join(STATIC_DIR, "member.html"))
+    return _portal_html("member.html")
 
 
 @app.get("/select-portal", include_in_schema=False)
 def select_portal_page():
-    return FileResponse(os.path.join(STATIC_DIR, "select-portal.html"))
+    return _portal_html("select-portal.html")
 
 
 @app.get("/admin", include_in_schema=False)
 def admin_page():
-    return FileResponse(os.path.join(STATIC_DIR, "admin.html"))
+    return _portal_html("admin.html")
 
 
 @app.get("/roster", include_in_schema=False)
 def roster_page():
-    return FileResponse(os.path.join(STATIC_DIR, "roster.html"))
+    return _portal_html("roster.html")
 
 
 @app.get("/config.js", include_in_schema=False)
