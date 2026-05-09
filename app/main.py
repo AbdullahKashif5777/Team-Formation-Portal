@@ -29,7 +29,14 @@ def _cors_allow_origins_and_credentials() -> tuple[list[str], bool]:
     if raw == "*":
         return ["*"], False
     if raw:
-        origins = list(dict.fromkeys(o.strip() for o in raw.split(",") if o.strip()))
+        # Browsers send Origin without a trailing slash; strip so env mistakes like https://host/ still match.
+        origins = list(
+            dict.fromkeys(
+                o.strip().rstrip("/")
+                for o in raw.split(",")
+                if o.strip().rstrip("/")
+            )
+        )
         return origins, True
     origins = list(
         dict.fromkeys(
@@ -138,6 +145,23 @@ def admin_page():
 @app.get("/roster", include_in_schema=False)
 def roster_page():
     return FileResponse(os.path.join(STATIC_DIR, "roster.html"))
+
+
+@app.get("/config.js", include_in_schema=False)
+def root_config_js():
+    """Netlify serves static/ at site root; FastAPI only mounted /static — expose root aliases."""
+    return FileResponse(
+        os.path.join(STATIC_DIR, "config.js"),
+        media_type="application/javascript",
+    )
+
+
+@app.get("/api-runtime.js", include_in_schema=False)
+def root_api_runtime_js():
+    return FileResponse(
+        os.path.join(STATIC_DIR, "api-runtime.js"),
+        media_type="application/javascript",
+    )
 
 
 @app.get("/favicon.ico", include_in_schema=False)

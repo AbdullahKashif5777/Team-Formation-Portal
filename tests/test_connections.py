@@ -49,6 +49,14 @@ def test_root_or_static_served(client):
     assert r.status_code == 200
 
 
+def test_root_portal_scripts_alias_served(client):
+    """HTML loads /config.js and /api-runtime.js at site root (Netlify-style); FastAPI must expose them."""
+    for path in ("/config.js", "/api-runtime.js"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert "javascript" in r.headers.get("content-type", "").lower()
+
+
 def test_cors_preflight_get_docs(client):
     r = client.options(
         "/api/docs",
