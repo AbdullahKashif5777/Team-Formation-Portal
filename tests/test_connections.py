@@ -50,11 +50,18 @@ def test_root_or_static_served(client):
 
 
 def test_root_portal_scripts_alias_served(client):
-    """HTML loads /config.js and /api-runtime.js at site root (Netlify-style); FastAPI must expose them."""
+    """Backward-compat root URLs (optional); HTML prefers /static/*."""
     for path in ("/config.js", "/api-runtime.js"):
         r = client.get(path)
         assert r.status_code == 200, path
         assert "javascript" in r.headers.get("content-type", "").lower()
+
+
+def test_static_portal_scripts_served(client):
+    """Portal HTML loads config from StaticFiles mount — works without root aliases."""
+    for path in ("/static/config.js", "/static/api-runtime.js"):
+        r = client.get(path)
+        assert r.status_code == 200, path
 
 
 def test_cors_preflight_get_docs(client):
