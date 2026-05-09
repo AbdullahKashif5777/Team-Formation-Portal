@@ -1379,6 +1379,15 @@ html[data-theme="light"] .theme-toggle:disabled {
   opacity: 1 !important;
 }
 
+/* ── Member portal — browse panel header actions ──────────────────────────── */
+.member-panel-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* ==========================================================================
    Mobile & touch — must stay LAST so layout overrides theme !important rules
    ========================================================================== */
@@ -1580,6 +1589,89 @@ html {
     align-items: flex-start !important;
     gap: 12px;
   }
+
+  /* Admin dashboard — section rows + button clusters */
+  .entity-section-row {
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .entity-section-row .admin-btn-group {
+    margin-left: 0 !important;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .entity-actions {
+    flex-wrap: wrap;
+  }
+
+  .entity-card {
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  /* Shared portal shells — tighter horizontal padding on phones */
+  .portal-page-padding {
+    padding: 12px 12px 0 !important;
+    padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .portal-page-padding--tabs {
+    padding-top: 18px !important;
+  }
+
+  /* Select portal — option rows */
+  .portal-option {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .opt-sec {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .opt-badges {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .selector-wrap {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Member browse panel — search row */
+  .search-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .member-panel-actions {
+    margin-left: 0 !important;
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+.portal-page-padding {
+  padding: 16px 32px 0;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.portal-page-padding--tabs {
+  padding-top: 24px;
 }
 
 @media (max-width: 480px) {

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>UMT Team Portal · Team Lead Dashboard</title>
   <meta name="description" content="Team Lead portal – manage your project team members in real-time."/>
-  <link rel="stylesheet" href="/static/style.css?v=15"/>
+  <link rel="stylesheet" href="/static/style.css?v=16"/>
   <style>
     .team-slots { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .slot {
@@ -44,7 +44,11 @@
       border-radius: 10px; margin-left: 6px;
     }
     .section-tabs {
-      display: flex; gap: 8px; overflow-x: auto; margin-bottom: 20px; padding: 0 32px; max-width:1400px; margin: 20px auto 0;
+      display: flex; gap: 8px; overflow-x: auto;
+      margin: 0 0 20px;
+      padding: 0;
+      max-width: none;
+      width: 100%;
     }
     .section-tab {
       padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05);
@@ -99,7 +103,7 @@
     .invite-sub { font-size: 0.78rem; color: var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   </style>
 </head>
-<body>
+<body data-page="lead">
 <div class="bg-anim">
   <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
 </div>
@@ -123,13 +127,12 @@
     </div>
   </nav>
 
-  <!-- Section Tabs -->
-  <div class="section-tabs" id="section-tabs-container">
-    <!-- Tabs rendered here -->
-  </div>
+  <!-- Section tabs + stats -->
+  <div class="portal-page-padding portal-page-padding--tabs">
+    <div class="section-tabs" id="section-tabs-container">
+      <!-- Tabs rendered here -->
+    </div>
 
-  <!-- Stats row -->
-  <div style="padding: 16px 32px 0; max-width:1400px; margin:0 auto;">
     <div class="stat-row">
       <div class="stat-card glass">
         <div class="stat-value violet" id="stat-members">0</div>

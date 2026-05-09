@@ -5,7 +5,7 @@
   <meta http-equiv="Cache-Control" content="no-store, max-age=0, must-revalidate"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>UMT Team Portal · Roster Sheet</title>
-  <link rel="stylesheet" href="/static/style.css?v=15"/>
+  <link rel="stylesheet" href="/static/style.css?v=16"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.min.css"/>
   <script src="https://cdn.jsdelivr.net/npm/jsuites@4.9.11/dist/jsuites.js"></script>
@@ -22,7 +22,55 @@
         min-height: -webkit-fill-available;
         padding-bottom: env(safe-area-inset-bottom, 0px);
       }
-      .roster-toolbar { gap: 8px !important; }
+      .roster-toolbar {
+        gap: 10px !important;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .toolbar-left, .toolbar-right {
+        width: 100%;
+        min-width: 0;
+      }
+      .toolbar-right {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .toolbar-title { width: 100%; }
+      .info-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      #edit-hint {
+        margin-left: 0 !important;
+        width: 100%;
+      }
+      .sheet-scroll-hint {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text-3);
+        padding: 0 12px 8px;
+      }
+      #roster-sheet {
+        padding: 12px !important;
+        min-width: 0 !important;
+      }
+    }
+    .sheet-scroll-hint { display: none; }
+
+    /* jSpreadsheet / jSuites — keep editors above toolbar, inside viewport */
+    .jexcel_container,
+    .jexcel_content { position: relative; z-index: 1; }
+    .jexcel .jdropdown,
+    .jexcel .jdropdown-container,
+    .jexcel_contextmenu,
+    .jexcel_about,
+    .jexcel .jspreadsheet_about,
+    body > .jdropdown,
+    body > .jdropdown-container {
+      z-index: 400 !important;
+      max-width: min(100vw - 24px, 560px) !important;
+      box-sizing: border-box;
     }
 
     /* ── Toolbar ── */
@@ -223,7 +271,7 @@
     }
   </style>
 </head>
-<body>
+<body data-page="roster">
 <div class="bg-anim"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
 
 <div class="page-wrapper roster-page">
@@ -263,7 +311,8 @@
 
   <!-- Spreadsheet -->
   <div class="sheet-wrap">
-    <div id="roster-sheet" style="min-width: 980px; padding: 18px;"></div>
+    <p class="sheet-scroll-hint" aria-hidden="true">Swipe horizontally to view all columns.</p>
+    <div id="roster-sheet" style="min-width: 0; width: 100%; padding: 18px; box-sizing: border-box;"></div>
   </div>
 
 </div>
@@ -623,6 +672,26 @@
 
   const DEFAULT_COLUMN_CONFIG = [];
 
+  function viewportColumnScale() {
+    try {
+      const w = window.innerWidth || document.documentElement.clientWidth || 1024;
+      if (w <= 400) return 0.52;
+      if (w <= 768) return 0.7;
+      return 1;
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  function scaleColumnsForViewport(cols) {
+    const s = viewportColumnScale();
+    if (s >= 0.999) return cols;
+    return cols.map((c) => {
+      const w = c.width != null ? Number(c.width) : 140;
+      return { ...c, width: Math.max(44, Math.round(w * s)) };
+    });
+  }
+
   function normalizeColumnConfig(cfg) {
     if (!Array.isArray(cfg)) return [];
     return cfg.map((c, i) => ({
@@ -730,7 +799,7 @@
     document.getElementById('info-teams').textContent   = `🏆 ${new Set((data.roster || []).map(r => r.team_name)).size} teams`;
 
     const serverCfg = (data.column_config && data.column_config.length) ? data.column_config : DEFAULT_COLUMN_CONFIG;
-    const columns = buildColumnsFromConfig(serverCfg);
+    const columns = scaleColumnsForViewport(buildColumnsFromConfig(serverCfg));
 
     const teams = Array.isArray(data.teams) ? data.teams.slice() : [];
     const allRows = Array.isArray(data.roster) ? data.roster.slice() : [];
@@ -1227,6 +1296,17 @@
       toast('error', 'Excel Export Failed', e?.message || String(e));
     }
   };
+
+  let rosterResizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (!rosterData) return;
+    clearTimeout(rosterResizeTimer);
+    rosterResizeTimer = setTimeout(() => {
+      try {
+        if (typeof window.renderSheet === 'function') window.renderSheet(rosterData);
+      } catch (_) {}
+    }, 280);
+  });
 </script>
 </body>
 </html>

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>UMT Team Portal · Student Dashboard</title>
   <meta name="description" content="Student portal – browse teams and request to join a project team."/>
-  <link rel="stylesheet" href="/static/style.css?v=15"/>
+  <link rel="stylesheet" href="/static/style.css?v=16"/>
   <style>
     .search-bar {
       display: flex; gap: 10px; margin-bottom: 20px;
@@ -64,9 +64,20 @@
     .invite-title { font-weight: 700; font-size: 0.9rem; color: var(--text-1); }
     .invite-sub { margin-top: 4px; font-size: 0.8rem; color: var(--text-3); }
     .invite-actions { display:flex; gap:10px; margin-top: 10px; }
+    .transfer-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 768px) {
+      .team-grid { max-height: min(56dvh, 480px); }
+      #transfer-section-select { min-width: 0 !important; width: 100%; max-width: 100%; }
+      .transfer-row { flex-direction: column; align-items: stretch !important; }
+    }
   </style>
 </head>
-<body>
+<body data-page="member">
 <div class="bg-anim">
   <div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div>
 </div>
@@ -112,7 +123,7 @@
     </div>
   </nav>
 
-  <div style="padding: 24px 32px 0; max-width:1400px; margin:0 auto;">
+  <div class="portal-page-padding portal-page-padding--tabs">
     <div class="section-tabs" id="section-tabs-container">
       <!-- Tabs rendered here -->
     </div>
@@ -162,7 +173,7 @@
         <div id="transfer-wrap" style="display:none; margin-top:16px;">
           <div class="divider"></div>
           <div class="form-label" style="margin-bottom:10px;">Change Section</div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <div class="transfer-row">
             <select id="transfer-section-select" class="form-input" style="min-width:260px;"></select>
             <button class="btn btn-ghost btn-sm" onclick="transferSection()">Change Section</button>
           </div>
@@ -189,7 +200,7 @@
     <div class="glass panel">
       <div class="panel-header">
         <div class="panel-title"><span class="panel-icon">AT</span> Available Teams</div>
-        <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+        <div class="member-panel-actions">
           <div class="info-chip" id="formation-close-teams" style="display:none;"></div>
           <button class="btn btn-ghost btn-sm" onclick="loadMyStatus()">↺ Refresh</button>
         </div>
