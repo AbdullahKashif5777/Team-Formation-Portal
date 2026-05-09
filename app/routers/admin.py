@@ -5,8 +5,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm.attributes import flag_modified
+from zoneinfo import ZoneInfo
 
 from app import models
 from app.auth import require_admin, hash_password, validate_umt_email
@@ -18,6 +19,32 @@ import logging
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 logger = logging.getLogger("uvicorn.error")
+
+_PK_TZ = ZoneInfo("Asia/Karachi")
+
+
+def _normalize_formation_dt(dt: datetime | None) -> datetime | None:
+    """
+    Normalize formation timer values for storage and comparison.
+
+    Admin UI uses `datetime-local` (no timezone). We treat naive values as Asia/Karachi
+    local time, convert to UTC, and store as naive UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        aware = dt.replace(tzinfo=_PK_TZ)
+    else:
+        aware = dt
+    utc = aware.astimezone(timezone.utc)
+    return utc.replace(tzinfo=None)
+
+
+def _dt_utc_z(dt: datetime | None) -> str | None:
+    """Serialize stored-naive-UTC datetimes as ISO 8601 with Z."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _warn_if_admin_emails_missing() -> None:
@@ -106,8 +133,8 @@ def _course_dict(c: models.Course) -> dict:
                 "id": s.id,
                 "name": s.name,
                 "team_size_limit": getattr(s, "team_size_limit", 4),
-                "formation_start": s.formation_start.isoformat() if getattr(s, "formation_start", None) else None,
-                "formation_end": s.formation_end.isoformat() if getattr(s, "formation_end", None) else None,
+                "formation_start": _dt_utc_z(getattr(s, "formation_start", None)),
+                "formation_end": _dt_utc_z(getattr(s, "formation_end", None)),
             }
             for s in c.sections
         ],
@@ -244,8 +271,8 @@ def create_section(data: SectionCreate, _: models.User = Depends(require_admin),
         course_id=course.id,
         name=section_name,
         team_size_limit=data.team_size_limit,
-        formation_start=data.formation_start,
-        formation_end=data.formation_end,
+        formation_start=_normalize_formation_dt(data.formation_start),
+        formation_end=_normalize_formation_dt(data.formation_end),
     )
     db.add(section)
     db.commit()
@@ -268,8 +295,8 @@ def create_section(data: SectionCreate, _: models.User = Depends(require_admin),
             "name": section.name,
             "course_id": course.id,
             "team_size_limit": section.team_size_limit,
-            "formation_start": section.formation_start.isoformat() if section.formation_start else None,
-            "formation_end": section.formation_end.isoformat() if section.formation_end else None,
+            "formation_start": _dt_utc_z(section.formation_start),
+            "formation_end": _dt_utc_z(section.formation_end),
         },
     }
 
@@ -289,9 +316,9 @@ def update_section(section_id: int, data: SectionUpdate, _: models.User = Depend
     # Preserve existing timer fields unless explicitly sent by the client.
     fields_set = getattr(data, "model_fields_set", set())
     if "formation_start" in fields_set:
-        section.formation_start = data.formation_start
+        section.formation_start = _normalize_formation_dt(data.formation_start)
     if "formation_end" in fields_set:
-        section.formation_end = data.formation_end
+        section.formation_end = _normalize_formation_dt(data.formation_end)
     member_slots_total = _member_slots_from_section_limit(section.team_size_limit)
     teams_updated = 0
     for team in section.teams:
@@ -310,8 +337,8 @@ def update_section(section_id: int, data: SectionUpdate, _: models.User = Depend
             "name": section.name,
             "course_id": section.course_id,
             "team_size_limit": section.team_size_limit,
-            "formation_start": section.formation_start.isoformat() if section.formation_start else None,
-            "formation_end": section.formation_end.isoformat() if section.formation_end else None,
+            "formation_start": _dt_utc_z(section.formation_start),
+            "formation_end": _dt_utc_z(section.formation_end),
         },
     }
 

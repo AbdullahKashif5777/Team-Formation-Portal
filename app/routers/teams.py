@@ -2,7 +2,7 @@ import asyncio
 import threading
 import csv
 from io import StringIO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -14,7 +14,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.database import get_db
 from app import models
 from app.auth import get_current_user
-from app.formation import is_formation_open
+from app.formation import is_formation_open, formation_window_debug
 from app.ws_manager import manager
 from app import email_utils
 from sqlalchemy.orm import joinedload
@@ -25,6 +25,14 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 member_router = APIRouter(prefix="/api/member", tags=["member"])
 
 
+@router.get("/sections/{section_id}/formation-status")
+def formation_status(
+    section_id: int,
+    _: models.User = Depends(get_current_user),
+):
+    return formation_window_debug(section_id)
+
+
 class RosterCellUpdate(BaseModel):
     row_id: int
     column_name: str
@@ -33,6 +41,13 @@ class RosterCellUpdate(BaseModel):
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
+def _dt_utc_z(dt: datetime | None) -> str | None:
+    """Serialize stored-naive-UTC datetimes as ISO 8601 with Z."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
 
 def _membership_kind(m: models.TeamMembership) -> str | None:
     extra = getattr(m, "extra_data", None) or {}
@@ -227,8 +242,8 @@ def my_team_info(user: models.User = Depends(get_current_user), db: Session = De
             "course_name": course_name_by_id(int(sec.course.id)) if sec.course else "",
             "course_id": sec.course.id if sec.course else None,
             "role": section_role,
-            "formation_start": sec.formation_start.isoformat() if getattr(sec, "formation_start", None) else None,
-            "formation_end": sec.formation_end.isoformat() if getattr(sec, "formation_end", None) else None,
+            "formation_start": _dt_utc_z(getattr(sec, "formation_start", None)),
+            "formation_end": _dt_utc_z(getattr(sec, "formation_end", None)),
         }
         
         if lead_team:
@@ -554,7 +569,14 @@ async def send_join_request(
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
     if not is_formation_open(team.section_id):
-        raise HTTPException(status_code=403, detail="Operation locked: Outside of scheduled formation window.")
+        dbg = formation_window_debug(int(team.section_id or 0))
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Operation locked: Outside of scheduled formation window.",
+                "formation": dbg,
+            },
+        )
 
     # Drop expired pending items before enforcing request limits.
     cleanup_expired_requests(db, section_id=team.section_id, member_id=user.id)

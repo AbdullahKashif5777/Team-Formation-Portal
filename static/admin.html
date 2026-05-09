@@ -565,8 +565,10 @@ function isoToLocalInput(iso) {
 
 async function saveTimer() {
   if (!activeTimerSectionId) return;
-  const formation_start = document.getElementById('timer-start').value || null;
-  const formation_end = document.getElementById('timer-end').value || null;
+  const raw_start = document.getElementById('timer-start').value || null;
+  const raw_end = document.getElementById('timer-end').value || null;
+  const formation_start = raw_start ? new Date(raw_start).toISOString() : null;
+  const formation_end = raw_end ? new Date(raw_end).toISOString() : null;
   const btn = document.querySelector('#timer-modal button.btn.btn-primary');
   if (btn) btn.disabled = true;
   try {

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 def load_env() -> None:
@@ -39,6 +42,37 @@ def env_csv(name: str) -> list[str]:
     if not raw:
         return []
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
+
+
+_LAST_ADMIN_EMAILS_RAW: str | None = None
+
+
+def _filter_umt_admin_emails(emails: list[str]) -> list[str]:
+    """
+    Admin notices must never go to personal inboxes.
+
+    We enforce UMT-only addresses here so even if the server env is misconfigured
+    (e.g., someone pastes a Gmail address into ADMIN_EMAILS), those recipients are ignored.
+    """
+    allowed = []
+    rejected = []
+    for e in emails:
+        if e.endswith("@umt.edu.pk"):
+            allowed.append(e)
+        else:
+            rejected.append(e)
+
+    # Warn once per distinct ADMIN_EMAILS value to avoid log spam.
+    global _LAST_ADMIN_EMAILS_RAW
+    raw = (os.getenv("ADMIN_EMAILS") or "").strip()
+    if rejected and raw and raw != _LAST_ADMIN_EMAILS_RAW:
+        _LAST_ADMIN_EMAILS_RAW = raw
+        logger.warning(
+            "Ignoring non-UMT admin notice recipients from ADMIN_EMAILS: %s",
+            ", ".join(rejected),
+        )
+
+    return allowed
 
 
 @dataclass(frozen=True)
@@ -103,7 +137,7 @@ class Settings:
 
     @property
     def admin_emails_list(self) -> list[str]:
-        return env_csv("ADMIN_EMAILS")
+        return _filter_umt_admin_emails(env_csv("ADMIN_EMAILS"))
 
     # Retired; kept empty to preserve runtime expectations.
     @property

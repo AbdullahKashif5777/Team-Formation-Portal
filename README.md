@@ -116,6 +116,10 @@ EMAIL_FROM=UMT Team Portal <noreply@umt.edu.pk>
 PUBLIC_BASE_URL=http://127.0.0.1:8000
 ```
 
+Admin notice recipients:
+
+- **`ADMIN_EMAILS`**: comma-separated list of inboxes to receive admin notices. For safety, the app only sends to `@umt.edu.pk` recipients; anything else is ignored.
+
 ## Google Sheets roster auto-sync (optional)
 
 If configured, the portal can create/update a Google Sheet for each Team Lead showing accepted members.
