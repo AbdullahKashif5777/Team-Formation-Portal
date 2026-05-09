@@ -179,6 +179,20 @@ def favicon():
     return Response(status_code=204)
 
 
+@app.get("/api/portal-features", include_in_schema=False)
+def portal_features():
+    """
+    Deployment smoke check: curl this URL after deploy. 404 means an old image is still running.
+    Bump marker when changing portal shell wiring (HTML + static JS paths).
+    """
+    return {
+        "marker": "portal-shell-2026-05-09",
+        "scripts_primary": "/static/config.js",
+        "root_aliases": ["/config.js", "/api-runtime.js"],
+        "html_cache": "meta+FileResponse-no-store",
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 

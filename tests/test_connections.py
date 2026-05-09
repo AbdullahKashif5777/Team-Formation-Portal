@@ -65,6 +65,13 @@ def test_static_portal_scripts_served(client):
         assert r.status_code == 200, path
 
 
+def test_portal_features_deploy_marker(client):
+    r = client.get("/api/portal-features")
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("marker") == "portal-shell-2026-05-09"
+
+
 def test_cors_preflight_get_docs(client):
     r = client.options(
         "/api/docs",
