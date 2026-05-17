@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, time as dt_time, date as dt_date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +34,44 @@ def _generate_slot_times(slot_date: dt_date, start_hm: str, end_hm: str, duratio
     return out
 
 
+def _section_meta(db: Session, section_id: int) -> tuple[str, str]:
+    section = (
+        db.query(models.Section)
+        .options(joinedload(models.Section.course))
+        .filter(models.Section.id == section_id)
+        .first()
+    )
+    if not section:
+        return "", ""
+    return (
+        section.name or "",
+        section.course.name if section.course else "",
+    )
+
+
+def _times_overlap(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and b_start < a_end
+
+
+def _lead_time_conflict(db: Session, user_id: int, slot: models.VivaSlot, sprint: models.VivaSprint) -> models.VivaSlot | None:
+    """Same lead cannot claim overlapping slots on the same date across any section."""
+    others = (
+        db.query(models.VivaSlot)
+        .join(models.VivaSprint, models.VivaSprint.id == models.VivaSlot.sprint_id)
+        .filter(
+            models.VivaSlot.id != slot.id,
+            models.VivaSlot.claimed_by_lead_id == user_id,
+            models.VivaSlot.status == "locked",
+            models.VivaSprint.slot_date == sprint.slot_date,
+        )
+        .all()
+    )
+    for other in others:
+        if _times_overlap(slot.start_at, slot.end_at, other.start_at, other.end_at):
+            return other
+    return None
+
+
 def _lead_team(db: Session, user_id: int, section_id: int) -> models.Team | None:
     return (
         db.query(models.Team)
@@ -41,7 +80,13 @@ def _lead_team(db: Session, user_id: int, section_id: int) -> models.Team | None
     )
 
 
-def _slot_payload(slot: models.VivaSlot, db: Session, viewer_id: int | None = None) -> dict:
+def _slot_payload(
+    slot: models.VivaSlot,
+    db: Session,
+    viewer_id: int | None = None,
+    section_name: str = "",
+    course_name: str = "",
+) -> dict:
     lead_name = None
     team_name = None
     roster = []
@@ -76,9 +121,49 @@ def _slot_payload(slot: models.VivaSlot, db: Session, viewer_id: int | None = No
         "lead_name": lead_name,
         "team_id": slot.team_id,
         "team_name": team_name,
+        "section_name": section_name,
+        "course_name": course_name,
         "roster": roster,
         "is_mine": bool(viewer_id and slot.claimed_by_lead_id == viewer_id),
     }
+
+
+def _create_sprint_with_slots(
+    db: Session,
+    *,
+    section_id: int,
+    sprint_label: str,
+    day: str,
+    slot_date: dt_date,
+    duration_minutes: int,
+    start_time: str,
+    end_time: str,
+    admin_id: int,
+    batch_key: str | None = None,
+) -> tuple[models.VivaSprint, list[models.VivaSlot]]:
+    times = _generate_slot_times(slot_date, start_time, end_time, duration_minutes)
+    if not times:
+        raise HTTPException(status_code=400, detail="No slots fit in the given window")
+    sprint = models.VivaSprint(
+        section_id=section_id,
+        sprint_label=sprint_label.strip(),
+        day=day.strip(),
+        slot_date=slot_date,
+        duration_minutes=duration_minutes,
+        window_start=start_time.strip(),
+        window_end=end_time.strip(),
+        published=False,
+        batch_key=batch_key,
+        created_by_id=admin_id,
+    )
+    db.add(sprint)
+    db.flush()
+    slots: list[models.VivaSlot] = []
+    for start_at, end_at in times:
+        s = models.VivaSlot(sprint_id=sprint.id, start_at=start_at, end_at=end_at, status="open")
+        db.add(s)
+        slots.append(s)
+    return sprint, slots
 
 
 class VivaGenerateRequest(BaseModel):
@@ -108,6 +193,21 @@ class VivaResetRequest(BaseModel):
     slot_id: int
 
 
+class VivaGenerateBulkRequest(BaseModel):
+    section_ids: list[int] = Field(min_length=1)
+    sprint_label: str = Field(min_length=1, max_length=80)
+    day: str = Field(min_length=1, max_length=20)
+    slot_date: dt_date
+    duration_minutes: int
+    start_time: str
+    end_time: str
+
+
+class VivaPublishBulkRequest(BaseModel):
+    batch_key: str | None = None
+    sprint_ids: list[int] | None = None
+
+
 @router.post("/generate")
 def generate_slots(
     data: VivaGenerateRequest,
@@ -120,34 +220,66 @@ def generate_slots(
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 
-    times = _generate_slot_times(data.slot_date, data.start_time, data.end_time, data.duration_minutes)
-    if not times:
-        raise HTTPException(status_code=400, detail="No slots fit in the given window")
-
-    sprint = models.VivaSprint(
+    sprint, slots = _create_sprint_with_slots(
+        db,
         section_id=data.section_id,
-        sprint_label=data.sprint_label.strip(),
-        day=data.day.strip(),
+        sprint_label=data.sprint_label,
+        day=data.day,
         slot_date=data.slot_date,
         duration_minutes=data.duration_minutes,
-        window_start=data.start_time.strip(),
-        window_end=data.end_time.strip(),
-        published=False,
-        created_by_id=admin.id,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        admin_id=admin.id,
     )
-    db.add(sprint)
-    db.flush()
-
-    for start_at, end_at in times:
-        db.add(models.VivaSlot(sprint_id=sprint.id, start_at=start_at, end_at=end_at, status="open"))
     db.commit()
     db.refresh(sprint)
-    slots = db.query(models.VivaSlot).filter(models.VivaSlot.sprint_id == sprint.id).order_by(models.VivaSlot.start_at).all()
+    sec_name, course_name = _section_meta(db, data.section_id)
     return {
         "sprint_id": sprint.id,
+        "batch_key": sprint.batch_key,
         "slot_count": len(slots),
-        "slots": [_slot_payload(s, db) for s in slots],
+        "slots": [_slot_payload(s, db, section_name=sec_name, course_name=course_name) for s in slots],
     }
+
+
+@router.post("/generate-bulk")
+def generate_slots_bulk(
+    data: VivaGenerateBulkRequest,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if data.duration_minutes not in DURATION_CHOICES:
+        raise HTTPException(status_code=400, detail=f"duration_minutes must be one of {sorted(DURATION_CHOICES)}")
+    batch_key = uuid.uuid4().hex
+    sections_out: list[dict] = []
+    for sid in data.section_ids:
+        section = db.query(models.Section).filter(models.Section.id == sid).first()
+        if not section:
+            raise HTTPException(status_code=404, detail=f"Section {sid} not found")
+        sprint, slots = _create_sprint_with_slots(
+            db,
+            section_id=sid,
+            sprint_label=data.sprint_label,
+            day=data.day,
+            slot_date=data.slot_date,
+            duration_minutes=data.duration_minutes,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            admin_id=admin.id,
+            batch_key=batch_key,
+        )
+        sec_name, course_name = _section_meta(db, sid)
+        sections_out.append(
+            {
+                "section_id": sid,
+                "section_name": sec_name,
+                "course_name": course_name,
+                "sprint_id": sprint.id,
+                "slot_count": len(slots),
+            }
+        )
+    db.commit()
+    return {"batch_key": batch_key, "slot_date": data.slot_date.isoformat(), "sections": sections_out}
 
 
 @router.put("/toggle-status")
@@ -166,7 +298,31 @@ def toggle_slot_status(
         raise HTTPException(status_code=400, detail="Locked slots cannot be toggled; use reset")
     slot.status = status
     db.commit()
-    return _slot_payload(slot, db)
+    sprint = db.query(models.VivaSprint).filter(models.VivaSprint.id == slot.sprint_id).first()
+    sec_name, course_name = _section_meta(db, sprint.section_id if sprint else 0)
+    return _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
+
+
+@router.post("/publish-bulk")
+def publish_sprints_bulk(
+    data: VivaPublishBulkRequest,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    q = db.query(models.VivaSprint).filter(models.VivaSprint.published.is_(False))
+    if data.batch_key:
+        q = q.filter(models.VivaSprint.batch_key == data.batch_key)
+    elif data.sprint_ids:
+        q = q.filter(models.VivaSprint.id.in_(data.sprint_ids))
+    else:
+        raise HTTPException(status_code=400, detail="Provide batch_key or sprint_ids")
+    sprints = q.all()
+    if not sprints:
+        raise HTTPException(status_code=404, detail="No unpublished sprints found")
+    for sprint in sprints:
+        sprint.published = True
+    db.commit()
+    return {"published_count": len(sprints), "sprint_ids": [s.id for s in sprints]}
 
 
 @router.post("/publish")
@@ -198,7 +354,9 @@ def reset_locked_slot(
     slot.claimed_by_lead_id = None
     slot.team_id = None
     db.commit()
-    return _slot_payload(slot, db)
+    sprint = db.query(models.VivaSprint).filter(models.VivaSprint.id == slot.sprint_id).first()
+    sec_name, course_name = _section_meta(db, sprint.section_id if sprint else 0)
+    return _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
 
 
 @router.post("/claim")
@@ -232,12 +390,20 @@ def claim_slot(
     if existing:
         raise HTTPException(status_code=400, detail="You already claimed a slot for this sprint")
 
+    conflict = _lead_time_conflict(db, user.id, slot, sprint)
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="Time conflict: you already have a viva slot at this time (another section/course).",
+        )
+
     slot.status = "locked"
     slot.claimed_by_lead_id = user.id
     slot.team_id = team.id
     db.commit()
     db.refresh(slot)
-    return _slot_payload(slot, db)
+    sec_name, course_name = _section_meta(db, sprint.section_id)
+    return _slot_payload(slot, db, user.id, sec_name, course_name)
 
 
 @router.get("/sprints")
@@ -261,6 +427,7 @@ def list_sprints(
             "slot_date": s.slot_date.isoformat(),
             "duration_minutes": s.duration_minutes,
             "published": s.published,
+            "batch_key": s.batch_key,
         }
         for s in sprints
     ]
@@ -294,7 +461,7 @@ def list_slots(
         .order_by(models.VivaSlot.start_at)
         .all()
     )
-    section = db.query(models.Section).filter(models.Section.id == section_id).first()
+    sec_name, course_name = _section_meta(db, section_id)
     return {
         "sprint": {
             "id": sprint.id,
@@ -302,9 +469,11 @@ def list_slots(
             "day": sprint.day,
             "slot_date": sprint.slot_date.isoformat(),
             "published": sprint.published,
-            "section_name": section.name if section else "",
+            "section_name": sec_name,
+            "course_name": course_name,
+            "batch_key": sprint.batch_key,
         },
-        "slots": [_slot_payload(s, db, user.id) for s in slots],
+        "slots": [_slot_payload(s, db, user.id, sec_name, course_name) for s in slots],
     }
 
 
@@ -322,7 +491,7 @@ def viva_schedule(
     if not sprint:
         return {"sprint": None, "rows": []}
 
-    section = db.query(models.Section).options(joinedload(models.Section.course)).filter(models.Section.id == section_id).first()
+    sec_name, course_name = _section_meta(db, section_id)
     slots = (
         db.query(models.VivaSlot)
         .filter(models.VivaSlot.sprint_id == sprint.id, models.VivaSlot.status == "locked")
@@ -331,15 +500,15 @@ def viva_schedule(
     )
     rows = []
     for slot in slots:
-        p = _slot_payload(slot, db)
+        p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
         rows.append(
             {
-                "section_name": section.name if section else "",
-                "course_name": section.course.name if section and section.course else "",
+                "course_name": course_name,
+                "section_name": sec_name,
+                "team_name": p["team_name"],
+                "lead_name": p["lead_name"],
                 "slot_start": p["start_at"],
                 "slot_end": p["end_at"],
-                "lead_name": p["lead_name"],
-                "team_name": p["team_name"],
                 "roster": p["roster"],
             }
         )
@@ -347,3 +516,51 @@ def viva_schedule(
         "sprint": {"id": sprint.id, "sprint_label": sprint.sprint_label, "published": sprint.published},
         "rows": rows,
     }
+
+
+@router.get("/schedule-all")
+def viva_schedule_all(
+    batch_key: str | None = None,
+    slot_date: dt_date | None = None,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Master viva sheet: all sections in a batch or on a given date."""
+    sprint_q = db.query(models.VivaSprint)
+    if batch_key:
+        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+    elif slot_date:
+        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    else:
+        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
+    sprints = sprint_q.order_by(models.VivaSprint.section_id, models.VivaSprint.id).all()
+    if not sprints:
+        return {"rows": []}
+
+    rows: list[dict] = []
+    for sprint in sprints:
+        sec_name, course_name = _section_meta(db, sprint.section_id)
+        slots = (
+            db.query(models.VivaSlot)
+            .filter(models.VivaSlot.sprint_id == sprint.id, models.VivaSlot.status == "locked")
+            .order_by(models.VivaSlot.start_at)
+            .all()
+        )
+        for slot in slots:
+            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
+            rows.append(
+                {
+                    "course_name": course_name,
+                    "section_name": sec_name,
+                    "team_name": p["team_name"],
+                    "lead_name": p["lead_name"],
+                    "slot_start": p["start_at"],
+                    "slot_end": p["end_at"],
+                    "roster": p["roster"],
+                    "sprint_label": sprint.sprint_label,
+                    "slot_date": sprint.slot_date.isoformat(),
+                }
+            )
+        # Include open/unclaimed rows for admin overview? User asked for sheet with teams - locked only is fine
+    rows.sort(key=lambda r: (r["slot_date"], r["slot_start"], r["course_name"], r["section_name"]))
+    return {"rows": rows, "batch_key": batch_key, "slot_date": slot_date.isoformat() if slot_date else None}
