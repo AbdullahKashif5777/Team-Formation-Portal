@@ -264,6 +264,8 @@ def _ensure_performance_indexes() -> None:
     stmts = [
         "CREATE INDEX IF NOT EXISTS ix_team_memberships_member_status ON team_memberships (member_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_team_memberships_team_status ON team_memberships (team_id, status)",
+        "ALTER TABLE viva_sprints ADD COLUMN IF NOT EXISTS batch_key VARCHAR(36)",
+        "CREATE INDEX IF NOT EXISTS ix_viva_sprints_batch_key ON viva_sprints (batch_key)",
     ]
     with engine.begin() as conn:
         for sql in stmts:

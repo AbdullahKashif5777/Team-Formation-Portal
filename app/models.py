@@ -120,6 +120,7 @@ class VivaSprint(Base):
     window_start = Column(String(8), nullable=False)  # HH:MM
     window_end = Column(String(8), nullable=False)
     published = Column(Boolean, default=False, nullable=False)
+    batch_key = Column(String(36), nullable=True, index=True)  # links same-day multi-section setup
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
