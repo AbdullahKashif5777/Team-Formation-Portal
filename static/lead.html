@@ -162,6 +162,7 @@
         <div class="panel-title"><span class="panel-icon">TM</span> My Team</div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-primary btn-sm" style="font-size:0.75rem; padding: 6px 14px;" onclick="goToRoster()">Roster Sheet</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:0.75rem; padding: 6px 14px;" onclick="goToViva()">Viva Slots</button>
           <span class="badge badge-accepted" id="team-status-badge">0/3</span>
         </div>
       </div>
@@ -789,6 +790,11 @@ function toggleTheme() {
 function goToRoster() {
   if (!currentSectionId) return toast('warning', 'No Section', 'Select a section tab first.');
   window.location.href = `/roster?section_id=${currentSectionId}&role=lead`;
+}
+
+function goToViva() {
+  if (!currentSectionId) return toast('warning', 'No Section', 'Select a section tab first.');
+  window.location.href = `/viva?section_id=${currentSectionId}`;
 }
 
 loadData();

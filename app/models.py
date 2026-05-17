@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, Float, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, UniqueConstraint, Float, JSON
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -105,3 +105,43 @@ class TeamMembership(Base):
     member = relationship("User", back_populates="memberships", foreign_keys=[member_id])
 
     __table_args__ = (UniqueConstraint("member_id", "team_id", name="uix_member_team"),)
+
+
+class VivaSprint(Base):
+    """Per-week viva config; new sprint rows preserve prior sprint history."""
+    __tablename__ = "viva_sprints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    sprint_label = Column(String(80), nullable=False)
+    day = Column(String(20), nullable=False)
+    slot_date = Column(Date, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    window_start = Column(String(8), nullable=False)  # HH:MM
+    window_end = Column(String(8), nullable=False)
+    published = Column(Boolean, default=False, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    section = relationship("Section", backref="viva_sprints")
+    slots = relationship("VivaSlot", back_populates="sprint", cascade="all, delete-orphan")
+
+
+class VivaSlot(Base):
+    __tablename__ = "viva_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sprint_id = Column(Integer, ForeignKey("viva_sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    start_at = Column(DateTime, nullable=False, index=True)
+    end_at = Column(DateTime, nullable=False)
+    status = Column(String(10), default="open", nullable=False, index=True)  # open | off | locked
+    claimed_by_lead_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+
+    sprint = relationship("VivaSprint", back_populates="slots")
+    claimed_by = relationship("User", foreign_keys=[claimed_by_lead_id])
+    team = relationship("Team")
+
+    __table_args__ = (
+        UniqueConstraint("sprint_id", "claimed_by_lead_id", name="uix_viva_one_slot_per_lead_per_sprint"),
+    )

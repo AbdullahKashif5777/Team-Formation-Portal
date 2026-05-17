@@ -12,6 +12,7 @@ from app.database import create_tables
 from app.core.database import log_db_healthcheck
 from app.routers import auth, teams, ws, admin, roster
 from app.routers import roster_sheet
+from app.routers import viva
 from app.core.config import env_csv, load_env
 from app.config import settings as app_settings
 
@@ -95,6 +96,7 @@ app.include_router(ws.router)
 app.include_router(admin.router)
 app.include_router(roster.router)
 app.include_router(roster_sheet.router)
+app.include_router(viva.router)
 
 # Serve static frontend files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
@@ -152,6 +154,11 @@ def admin_page():
 @app.get("/roster", include_in_schema=False)
 def roster_page():
     return _portal_html("roster.html")
+
+
+@app.get("/viva", include_in_schema=False)
+def viva_page():
+    return _portal_html("viva.html")
 
 
 @app.get("/config.js", include_in_schema=False)

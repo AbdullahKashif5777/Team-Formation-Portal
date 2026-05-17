@@ -353,6 +353,7 @@ function renderCourses() {
               <span>${s.name}</span>
               <div class="admin-btn-group">
                 <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="window.location.href='/roster?section_id=${s.id}&role=admin'">Roster Sheet</button>
+                <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="window.location.href='/viva?section_id=${s.id}'">Viva Slots</button>
                 <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="editSectionLimit(${s.id}, ${s.team_size_limit || 4}, '${s.name.replace(/'/g, "\\'")}')">Edit Limit</button>
                 <button class="btn btn-ghost btn-sm admin-remove-btn" onclick="openTimerModal(${s.id}, '${s.name.replace(/'/g, "\\'")}', '${(s.formation_start||'').replace(/'/g, "\\'")}', '${(s.formation_end||'').replace(/'/g, "\\'")}')">Timer</button>
                 <button class="btn btn-danger btn-sm admin-remove-btn" onclick="deleteSection(${s.id}, '${s.name.replace(/'/g, "\\'")}')">Remove</button>
