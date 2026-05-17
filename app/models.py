@@ -107,6 +107,19 @@ class TeamMembership(Base):
     __table_args__ = (UniqueConstraint("member_id", "team_id", name="uix_member_team"),)
 
 
+class VivaBatchSection(Base):
+    """Sections that share one global slot pool for a batch (same day / sprint number)."""
+    __tablename__ = "viva_batch_sections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_key = Column(String(36), nullable=False, index=True)
+    section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    section = relationship("Section")
+
+    __table_args__ = (UniqueConstraint("batch_key", "section_id", name="uix_viva_batch_section"),)
+
+
 class VivaSprint(Base):
     """Per-week viva config; new sprint rows preserve prior sprint history."""
     __tablename__ = "viva_sprints"
@@ -114,6 +127,7 @@ class VivaSprint(Base):
     id = Column(Integer, primary_key=True, index=True)
     section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False, index=True)
     sprint_label = Column(String(80), nullable=False)
+    sprint_number = Column(Integer, nullable=True, index=True)  # 1–5
     day = Column(String(20), nullable=False)
     slot_date = Column(Date, nullable=False)
     duration_minutes = Column(Integer, nullable=False)
@@ -121,6 +135,7 @@ class VivaSprint(Base):
     window_end = Column(String(8), nullable=False)
     published = Column(Boolean, default=False, nullable=False)
     batch_key = Column(String(36), nullable=True, index=True)  # links same-day multi-section setup
+    is_shared_pool = Column(Boolean, default=False, nullable=False)  # one slot grid for all batch sections
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

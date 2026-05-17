@@ -54,6 +54,11 @@
       max-width: 400px; width: 100%; padding: 20px; border-radius: 14px;
       border: 1px solid var(--border-subtle); background: var(--bg-2, #0f172a);
     }
+    .team-sheet-card {
+      border: 1px solid var(--border-subtle); border-radius: 12px; padding: 12px 14px;
+      margin-bottom: 12px; background: rgba(255,255,255,0.03);
+    }
+    .team-sheet-card h4 { margin: 0 0 8px; font-size: 0.9rem; color: var(--violet-light); }
   </style>
 </head>
 <body>
@@ -66,10 +71,13 @@
 
   <div id="admin-panel" style="display:none">
     <div class="glass viva-bulk-card" style="padding:16px;margin-bottom:16px;">
-      <h2 class="viva-bulk-title">All sections — one viva day</h2>
-      <p class="tiny" style="margin-bottom:10px;">Select every section you teach. Same date and time for all; configure each section in the tabs below, then publish once.</p>
+      <h2 class="viva-bulk-title">All sections — shared slot pool</h2>
+      <p class="tiny" style="margin-bottom:10px;">One time grid for all selected sections. If any team books 8:00 AM, that slot closes for every course and section that day.</p>
       <div class="viva-form">
-        <input id="v-sprint-label" class="form-input" placeholder="Sprint label" value="Viva Week 1"/>
+        <select id="v-sprint-num" class="form-input">
+          <option value="1">Sprint 1</option><option value="2">Sprint 2</option><option value="3">Sprint 3</option>
+          <option value="4">Sprint 4</option><option value="5">Sprint 5</option>
+        </select>
         <input id="v-day" class="form-input" placeholder="Day" value="Monday"/>
         <input id="v-date" class="form-input" type="date"/>
         <select id="v-duration" class="form-input">
@@ -115,23 +123,40 @@
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('master')">Booked only</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('daily')">Day roster</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('label')">Sprint roster</button>
+        <button type="button" class="admin-sheet-tab" onclick="switchSheet('teams')">Team sheets</button>
+        <button type="button" class="admin-sheet-tab" onclick="switchSheet('marks')">All marks</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('scores')">Score sheet</button>
       </div>
       <div id="sheet-matrix" class="sheet-panel active" style="max-height:420px;overflow:auto">
-        <table class="schedule-table"><thead><tr><th>Date</th><th>Time Slot</th><th>Section Name</th><th>Team Lead Name</th><th>Booking Status</th></tr></thead><tbody id="roster-matrix-body"></tbody></table>
+        <table class="schedule-table"><thead><tr><th>Date</th><th>Time Slot</th><th>Course</th><th>Section Name</th><th>Team Lead Name</th><th>Booking Status</th></tr></thead><tbody id="roster-matrix-body"></tbody></table>
       </div>
       <div id="sheet-master" class="sheet-panel">
         <table class="schedule-table"><thead><tr><th>Date</th><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Lead</th><th>Time</th><th>Members</th></tr></thead><tbody id="schedule-all-body"></tbody></table>
       </div>
       <div id="sheet-daily" class="sheet-panel"><table class="schedule-table"><thead><tr><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Lead</th><th>Time</th><th>Members</th></tr></thead><tbody id="roster-daily-body"></tbody></table></div>
       <div id="sheet-label" class="sheet-panel"><table class="schedule-table"><thead><tr><th>Date</th><th>Day</th><th>Team</th><th>Lead</th><th>Time</th><th>Members</th></tr></thead><tbody id="roster-label-body"></tbody></table></div>
+
+      <div id="sheet-teams" class="sheet-panel" style="max-height:420px;overflow:auto">
+        <div id="team-sheets-wrap"></div>
+      </div>
+      <div id="sheet-marks" class="sheet-panel" style="max-height:420px;overflow:auto">
+        <select id="marks-sprint-filter" class="form-input" style="max-width:160px;margin-bottom:10px" onchange="loadMarksOverview()">
+          <option value="">All sprints</option>
+          <option value="1">Sprint 1</option><option value="2">Sprint 2</option>
+          <option value="3">Sprint 3</option><option value="4">Sprint 4</option><option value="5">Sprint 5</option>
+        </select>
+        <table class="schedule-table">
+          <thead><tr><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Role</th><th>Name</th><th>ID</th><th>Slot</th><th>Score</th><th>Notes</th></tr></thead>
+          <tbody id="marks-overview-body"></tbody>
+        </table>
+      </div>
       <div id="sheet-scores" class="sheet-panel"><button type="button" class="btn btn-primary btn-sm" style="margin-bottom:10px" onclick="saveScores()">Save scores</button><table class="schedule-table"><thead><tr><th>Team</th><th>Role</th><th>Name</th><th>ID</th><th>Slot</th><th>Score</th><th>Notes</th></tr></thead><tbody id="scores-body"></tbody></table></div>
     </div>
   </div>
 
   <div id="lead-panel" style="display:none">
     <div class="glass" style="padding:16px;">
-      <p class="tiny">Pick one open slot. You must confirm before booking. One slot per sprint name for your team.</p>
+      <p class="tiny">Pick one open slot (shared across all sections). Confirm to book. One slot per sprint number for your team, on any day.</p>
       <p id="lead-context" style="font-size:0.88rem;color:var(--text-2);margin:8px 0;"></p>
       <select id="v-lead-sprint" class="form-input" style="max-width:280px;margin:8px 0" onchange="loadSlots()"></select>
       <div id="lead-slots" class="viva-grid"></div>
@@ -215,7 +240,7 @@
   }
 
   window.switchSheet = function(name) {
-    var names = ['matrix', 'master', 'daily', 'label', 'scores'];
+    var names = ['matrix', 'master', 'daily', 'label', 'teams', 'marks', 'scores'];
     document.querySelectorAll('.admin-sheet-tab').forEach(function(btn, i) {
       btn.classList.toggle('active', names[i] === name);
     });
@@ -225,6 +250,8 @@
     if (name === 'matrix') loadRosterMatrix();
     if (name === 'daily') loadRosterDaily();
     if (name === 'label') loadRosterLabel();
+    if (name === 'teams') loadTeamSheets();
+    if (name === 'marks') loadMarksOverview();
     if (name === 'scores') loadScores();
   };
 
@@ -269,8 +296,8 @@
     if (!q) { el.innerHTML = '<tr><td colspan="5" class="tiny">Generate or pick a date</td></tr>'; return; }
     var data = await api('/api/viva/roster/matrix' + q);
     el.innerHTML = (data.rows || []).map(function(r) {
-      return '<tr><td>' + esc(r.slot_date) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + esc(r.booking_status) + '</td></tr>';
-    }).join('') || '<tr><td colspan="5" class="tiny">No slots</td></tr>';
+      return '<tr><td>' + esc(r.slot_date) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + esc(r.course_name) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + esc(r.booking_status) + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="tiny">No slots</td></tr>';
   }
 
   async function clearPublished() {
@@ -287,11 +314,44 @@
   }
   window.clearPublished = clearPublished;
 
+  async function loadTeamSheets() {
+    var wrap = document.getElementById('team-sheets-wrap');
+    if (!wrap) return;
+    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
+    if (!q && document.getElementById('v-date').value) q = '?slot_date=' + document.getElementById('v-date').value;
+    if (!q) { wrap.innerHTML = '<p class="tiny">Generate slots or pick a date</p>'; return; }
+    q += (q.indexOf('?') >= 0 ? '&' : '?') + 'sprint_number=' + sprintNum();
+    var data = await api('/api/viva/roster/team-sheets' + q);
+    wrap.innerHTML = (data.sheets || []).map(function(s) {
+      var bookings = (s.bookings || []).map(function(b) {
+        return '<li class="tiny">' + esc(b.sprint_label || ('Sprint ' + b.sprint_number)) + ' · ' + esc(b.slot_date) + ' · ' + fmtTime(b.slot_start) + '–' + fmtTime(b.slot_end) + '</li>';
+      }).join('');
+      return '<div class="team-sheet-card"><h4>' + esc(s.team_name) + ' · ' + esc(s.course_name) + ' · ' + esc(s.section_name) + '</h4>'
+        + '<p class="tiny"><strong>Lead:</strong> ' + esc(s.lead_name) + '</p><p class="tiny"><strong>Members</strong></p>'
+        + '<div class="tiny">' + rosterMembersHtml(s.roster) + '</div>'
+        + '<p class="tiny" style="margin-top:8px"><strong>Bookings</strong></p><ul style="margin:0;padding-left:18px">' + (bookings || '<li class="tiny">—</li>') + '</ul></div>';
+    }).join('') || '<p class="tiny">No team bookings yet</p>';
+  }
+
+  async function loadMarksOverview() {
+    var el = document.getElementById('marks-overview-body');
+    if (!el) return;
+    var sn = document.getElementById('marks-sprint-filter').value;
+    var q = sn ? ('?sprint_number=' + sn) : '';
+    var data = await api('/api/viva/marks/overview' + q);
+    el.innerHTML = (data.rows || []).map(function(r) {
+      return '<tr><td>' + esc(r.sprint_label || r.sprint_number) + '</td><td>' + esc(r.course_name) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.student_id) + '</td><td>' + fmtTime(r.slot_start) + '</td><td>' + (r.score != null ? r.score : '') + '</td><td>' + esc(r.notes || '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="10" class="tiny">No rows</td></tr>';
+  }
+  window.loadMarksOverview = loadMarksOverview;
+
   async function refreshAllSheets() {
     await loadRosterMatrix();
     await loadScheduleAll();
     await loadRosterDaily();
     await loadRosterLabel();
+    await loadTeamSheets();
+    if (document.getElementById('sheet-marks') && document.getElementById('sheet-marks').classList.contains('active')) await loadMarksOverview();
     if (document.getElementById('sheet-scores') && document.getElementById('sheet-scores').classList.contains('active')) await loadScores();
   }
 
@@ -310,8 +370,7 @@
     var el = document.getElementById('roster-label-body');
     if (!el) return;
     if (!activeSectionId) return;
-    var label = document.getElementById('v-sprint-label').value.trim();
-    if (!label) { el.innerHTML = '<tr><td colspan="6" class="tiny">Enter sprint label above</td></tr>'; return; }
+    var label = 'Sprint ' + sprintNum();
     var data = await api('/api/viva/roster/sprint-label?section_id=' + activeSectionId + '&sprint_label=' + encodeURIComponent(label));
     el.innerHTML = (data.rows || []).map(function(r) {
       return '<tr><td>' + esc(r.slot_date) + '</td><td>' + esc(r.day) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + rosterMembersHtml(r.roster) + '</td></tr>';
@@ -355,7 +414,7 @@
     var id = pendingClaimSlotId;
     cancelClaim();
     try {
-      await api('/api/viva/claim', { method: 'POST', body: JSON.stringify({ slot_id: id }) });
+      await api('/api/viva/claim', { method: 'POST', body: JSON.stringify({ slot_id: id, section_id: urlSectionId || activeSectionId || null }) });
       toast('success', 'Claimed', 'Slot locked for your team.');
       await loadSlots();
     } catch (e) { toast('error', 'Claim failed', e.message); }
@@ -435,7 +494,7 @@
       sectionSprints[s.section_id] = { sprint_id: s.sprint_id, section_name: s.section_name, course_name: s.course_name };
     });
     activeSectionId = data.sections[0].section_id;
-    toast('success', 'Generated', data.sections.length + ' section(s), same date.');
+    toast('success', 'Generated', 'Shared pool for ' + data.sections.length + ' section(s) · Sprint ' + data.sprint_number + '.');
     renderSectionTabs();
     await loadSprintsForSection();
     await refreshAllSheets();
@@ -449,9 +508,15 @@
     await refreshAllSheets();
   }
 
+  function sprintNum() {
+    return parseInt(document.getElementById('v-sprint-num').value, 10) || 1;
+  }
+
   function buildFormBody() {
+    var n = sprintNum();
     return {
-      sprint_label: document.getElementById('v-sprint-label').value.trim(),
+      sprint_number: n,
+      sprint_label: 'Sprint ' + n,
       day: document.getElementById('v-day').value.trim(),
       slot_date: document.getElementById('v-date').value,
       duration_minutes: parseInt(document.getElementById('v-duration').value, 10),
