@@ -353,10 +353,12 @@ function handleEvent(event, data) {
     addLog('A member cancelled their request');
   } else if (event === 'viva_published') {
     var sec = data.section_name ? data.section_name + ' · ' : '';
-    toast('info', 'Viva slots published', (data.course_name || '') + ' ' + sec + (data.sprint_label || '') + ' — ' + (data.slot_date || ''));
+    toast('info', 'Viva slots published', (data.course_name || '') + ' ' + sec + (data.sprint_label || '') + ' — ' + (data.slot_date || '') + '. Open Viva Slots to book.');
     addLog('Viva slots published: ' + (data.sprint_label || '') + ' on ' + (data.slot_date || ''));
     if (!data.section_id || data.section_id == currentSectionId) {
-      /* optional: user can open viva page */
+      if (confirm('New viva slots are available for your section. Open the booking page now?')) {
+        window.location.href = '/viva?section_id=' + currentSectionId;
+      }
     }
   }
 }

@@ -103,19 +103,24 @@
         <button type="button" class="btn btn-ghost btn-sm" onclick="setAllSlots('open')">Open all</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="setAllSlots('off')">Off all</button>
         <button type="button" class="btn btn-success btn-sm" onclick="publishCurrentSprint()">Publish this sprint</button>
-        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="deleteCurrentSprint()">Delete sprint &amp; slots</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="deleteCurrentSprint()">Delete sprint</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="clearPublished()">Clear all published (day/batch)</button>
       </div>
       <div id="admin-slots" class="viva-grid"></div>
     </div>
 
     <div class="glass" style="padding:16px;">
       <div class="admin-sheet-tabs">
-        <button type="button" class="admin-sheet-tab active" onclick="switchSheet('master')">Master schedule</button>
+        <button type="button" class="admin-sheet-tab active" onclick="switchSheet('matrix')">Master roster</button>
+        <button type="button" class="admin-sheet-tab" onclick="switchSheet('master')">Booked only</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('daily')">Day roster</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('label')">Sprint roster</button>
         <button type="button" class="admin-sheet-tab" onclick="switchSheet('scores')">Score sheet</button>
       </div>
-      <div id="sheet-master" class="sheet-panel active">
+      <div id="sheet-matrix" class="sheet-panel active" style="max-height:420px;overflow:auto">
+        <table class="schedule-table"><thead><tr><th>Date</th><th>Time Slot</th><th>Section Name</th><th>Team Lead Name</th><th>Booking Status</th></tr></thead><tbody id="roster-matrix-body"></tbody></table>
+      </div>
+      <div id="sheet-master" class="sheet-panel">
         <table class="schedule-table"><thead><tr><th>Date</th><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Lead</th><th>Time</th><th>Members</th></tr></thead><tbody id="schedule-all-body"></tbody></table>
       </div>
       <div id="sheet-daily" class="sheet-panel"><table class="schedule-table"><thead><tr><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Lead</th><th>Time</th><th>Members</th></tr></thead><tbody id="roster-daily-body"></tbody></table></div>
@@ -137,7 +142,8 @@
 <div id="claim-confirm" class="confirm-overlay">
   <div class="confirm-box glass">
     <div style="font-weight:700;margin-bottom:8px">Confirm viva slot</div>
-    <p id="claim-confirm-text" class="tiny" style="margin-bottom:14px"></p>
+    <p id="claim-confirm-text" class="tiny" style="margin-bottom:14px">Are you sure you want to book this viva slot for your team? This action cannot be undone without Admin approval.</p>
+    <p id="claim-confirm-time" class="tiny" style="margin-bottom:14px;color:var(--violet-light)"></p>
     <div style="display:flex;gap:10px">
       <button type="button" class="btn btn-primary btn-sm" onclick="confirmClaim()">Yes, book this slot</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="cancelClaim()">Cancel</button>
@@ -174,6 +180,14 @@
   if (role !== 'admin' && role !== 'lead') location.href = '/';
   if (role === 'lead' && !urlSectionId) location.href = '/lead';
 
+  (function setDefaultVivaDate() {
+    var d = document.getElementById('v-date');
+    if (d && !d.value) {
+      var t = new Date();
+      d.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    }
+  })();
+
   document.getElementById('viva-role-badge').textContent = role === 'admin' ? 'Admin' : 'Lead';
   document.getElementById('admin-panel').style.display = role === 'admin' ? '' : 'none';
   document.getElementById('lead-panel').style.display = role === 'admin' ? 'none' : '';
@@ -201,13 +215,14 @@
   }
 
   window.switchSheet = function(name) {
-    var names = ['master', 'daily', 'label', 'scores'];
+    var names = ['matrix', 'master', 'daily', 'label', 'scores'];
     document.querySelectorAll('.admin-sheet-tab').forEach(function(btn, i) {
       btn.classList.toggle('active', names[i] === name);
     });
     document.querySelectorAll('.sheet-panel').forEach(function(p) { p.classList.remove('active'); });
     var el = document.getElementById('sheet-' + name);
     if (el) el.classList.add('active');
+    if (name === 'matrix') loadRosterMatrix();
     if (name === 'daily') loadRosterDaily();
     if (name === 'label') loadRosterLabel();
     if (name === 'scores') loadScores();
@@ -244,7 +259,36 @@
   }
   window.deleteCurrentSprint = deleteCurrentSprint;
 
+  async function loadRosterMatrix() {
+    var el = document.getElementById('roster-matrix-body');
+    if (!el) return;
+    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
+    if (!q && document.getElementById('v-date').value) {
+      q = '?slot_date=' + document.getElementById('v-date').value;
+    }
+    if (!q) { el.innerHTML = '<tr><td colspan="5" class="tiny">Generate or pick a date</td></tr>'; return; }
+    var data = await api('/api/viva/roster/matrix' + q);
+    el.innerHTML = (data.rows || []).map(function(r) {
+      return '<tr><td>' + esc(r.slot_date) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + esc(r.booking_status) + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="tiny">No slots</td></tr>';
+  }
+
+  async function clearPublished() {
+    var body = {};
+    if (batchKey) body.batch_key = batchKey;
+    else if (document.getElementById('v-date').value) body.slot_date = document.getElementById('v-date').value;
+    else return toast('warning', 'Clear', 'Set batch (generate) or date first.');
+    if (activeSectionId) body.section_id = activeSectionId;
+    if (!confirm('Delete ALL published sprints/slots for this day/batch? Previous sprint history on other dates is kept.')) return;
+    await api('/api/viva/clear-published', { method: 'POST', body: JSON.stringify(body) });
+    toast('info', 'Cleared', 'Published slots removed for selection.');
+    await loadSprintsForSection();
+    await refreshAllSheets();
+  }
+  window.clearPublished = clearPublished;
+
   async function refreshAllSheets() {
+    await loadRosterMatrix();
     await loadScheduleAll();
     await loadRosterDaily();
     await loadRosterLabel();
@@ -335,6 +379,10 @@
       });
     });
     document.getElementById('section-pick').innerHTML = html || '<span class="tiny">No sections</span>';
+    if (!activeSectionId) {
+      var first = document.querySelector('.viva-sec-cb:checked') || document.querySelector('.viva-sec-cb');
+      if (first) activeSectionId = parseInt(first.value, 10);
+    }
     renderSectionTabs();
   }
 
@@ -524,22 +572,27 @@
 
   async function claimSlot(slotId) {
     var slot = (lastSlotsData || []).find(function(s) { return s.id === slotId; });
-    if (!slot) return;
+    if (!slot || slot.status !== 'open') return;
     pendingClaimSlotId = slotId;
-    document.getElementById('claim-confirm-text').textContent =
-      'Book ' + fmtTime(slot.start_at) + ' – ' + fmtTime(slot.end_at) + ' for your team? You cannot change this sprint booking to another day.';
+    document.getElementById('claim-confirm-time').textContent =
+      fmtTime(slot.start_at) + ' – ' + fmtTime(slot.end_at);
     document.getElementById('claim-confirm').classList.add('show');
   }
   window.claimSlot = claimSlot;
   window.resetSlot = resetSlot;
   window.adminToggle = adminToggle;
+  window.generateBulk = generateBulk;
+  window.publishBulk = publishBulk;
+  window.generateSingleSection = generateSingleSection;
+  window.onSprintChange = onSprintChange;
 
   (async function init() {
     try {
       if (role === 'admin') {
         await loadAdminCourses();
         if (urlSectionId) activeSectionId = urlSectionId;
-        if (activeSectionId) { await loadSprintsForSection(); await refreshAllSheets(); }
+        if (activeSectionId) await loadSprintsForSection();
+        if (batchKey || document.getElementById('v-date').value) await refreshAllSheets();
       } else {
         await loadLeadSprints();
       }

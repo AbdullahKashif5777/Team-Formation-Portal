@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from app import models
 from app.auth import get_current_user, require_admin
 from app.database import get_db
+from app import email_utils
 from app.ws_manager import manager
 
 router = APIRouter(prefix="/api/viva", tags=["viva"])
@@ -55,7 +56,7 @@ def _times_overlap(a_start: datetime, a_end: datetime, b_start: datetime, b_end:
 
 
 def _lead_time_conflict(db: Session, user_id: int, slot: models.VivaSlot, sprint: models.VivaSprint) -> models.VivaSlot | None:
-    """Same lead cannot claim overlapping slots on the same date across any section."""
+    """Same lead cannot claim two overlapping slots in the same section on the same date."""
     others = (
         db.query(models.VivaSlot)
         .join(models.VivaSprint, models.VivaSprint.id == models.VivaSlot.sprint_id)
@@ -63,6 +64,7 @@ def _lead_time_conflict(db: Session, user_id: int, slot: models.VivaSlot, sprint
             models.VivaSlot.id != slot.id,
             models.VivaSlot.claimed_by_lead_id == user_id,
             models.VivaSlot.status == "locked",
+            models.VivaSprint.section_id == sprint.section_id,
             models.VivaSprint.slot_date == sprint.slot_date,
         )
         .all()
@@ -139,10 +141,58 @@ def _team_locked_for_sprint_label(
     )
 
 
+def _send_viva_booking_emails(
+    db: Session,
+    team: models.Team,
+    sprint: models.VivaSprint,
+    slot: models.VivaSlot,
+    section_name: str,
+    course_name: str,
+) -> None:
+    lead = db.query(models.User).filter(models.User.id == team.lead_id).first()
+    time_label = f"{slot.start_at.strftime('%H:%M')} – {slot.end_at.strftime('%H:%M')}"
+    date_label = sprint.slot_date.isoformat()
+    if lead and lead.email:
+        email_utils.send_async(
+            email_utils.send_viva_slot_booked,
+            lead.email,
+            lead.name,
+            lead.student_id,
+            team.name,
+            course_name,
+            section_name,
+            sprint.sprint_label,
+            date_label,
+            time_label,
+            sprint.day,
+        )
+    members = (
+        db.query(models.TeamMembership)
+        .options(joinedload(models.TeamMembership.member))
+        .filter(models.TeamMembership.team_id == team.id, models.TeamMembership.status == "accepted")
+        .all()
+    )
+    for m in members:
+        if m.member and m.member.email:
+            email_utils.send_async(
+                email_utils.send_viva_slot_booked,
+                m.member.email,
+                m.member.name,
+                m.member.student_id,
+                team.name,
+                course_name,
+                section_name,
+                sprint.sprint_label,
+                date_label,
+                time_label,
+                sprint.day,
+            )
+
+
 def _roster_row_from_slot(
     slot: models.VivaSlot, sprint: models.VivaSprint, sec_name: str, course_name: str, db: Session
 ) -> dict:
-    p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
+    p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sprint.section_id)
     return {
         "course_name": course_name,
         "section_name": sec_name,
@@ -164,6 +214,7 @@ def _slot_payload(
     viewer_id: int | None = None,
     section_name: str = "",
     course_name: str = "",
+    section_id: int | None = None,
 ) -> dict:
     lead_name = None
     team_name = None
@@ -201,7 +252,9 @@ def _slot_payload(
         "team_name": team_name,
         "section_name": section_name,
         "course_name": course_name,
+        "section_id": section_id,
         "roster": roster,
+        "booking_status": "Booked" if slot.status == "locked" else ("Off" if slot.status == "off" else "Open"),
         "is_mine": bool(viewer_id and slot.claimed_by_lead_id == viewer_id),
     }
 
@@ -302,6 +355,13 @@ class VivaScoresSaveRequest(BaseModel):
     scores: list[VivaScoreUpdate]
 
 
+class VivaClearPublishedRequest(BaseModel):
+    batch_key: str | None = None
+    slot_date: dt_date | None = None
+    sprint_id: int | None = None
+    section_id: int | None = None
+
+
 @router.post("/generate")
 def generate_slots(
     data: VivaGenerateRequest,
@@ -332,7 +392,7 @@ def generate_slots(
         "sprint_id": sprint.id,
         "batch_key": sprint.batch_key,
         "slot_count": len(slots),
-        "slots": [_slot_payload(s, db, section_name=sec_name, course_name=course_name) for s in slots],
+        "slots": [_slot_payload(s, db, section_name=sec_name, course_name=course_name, section_id=data.section_id) for s in slots],
     }
 
 
@@ -461,7 +521,12 @@ def claim_slot(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    slot = db.query(models.VivaSlot).filter(models.VivaSlot.id == data.slot_id).first()
+    slot = (
+        db.query(models.VivaSlot)
+        .filter(models.VivaSlot.id == data.slot_id)
+        .with_for_update()
+        .first()
+    )
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
     sprint = db.query(models.VivaSprint).filter(models.VivaSprint.id == slot.sprint_id).first()
@@ -473,6 +538,8 @@ def claim_slot(
     team = _lead_team(db, user.id, sprint.section_id)
     if not team:
         raise HTTPException(status_code=403, detail="You are not a team lead for this section")
+    if team.section_id != sprint.section_id:
+        raise HTTPException(status_code=403, detail="Slot does not belong to your section")
 
     existing = (
         db.query(models.VivaSlot)
@@ -500,7 +567,7 @@ def claim_slot(
     if conflict:
         raise HTTPException(
             status_code=409,
-            detail="Time conflict: you already have a viva slot at this time (another section/course).",
+            detail="Time conflict: you already have a viva slot at this time in this section.",
         )
 
     slot.status = "locked"
@@ -509,7 +576,8 @@ def claim_slot(
     db.commit()
     db.refresh(slot)
     sec_name, course_name = _section_meta(db, sprint.section_id)
-    return _slot_payload(slot, db, user.id, sec_name, course_name)
+    _send_viva_booking_emails(db, team, sprint, slot, sec_name, course_name)
+    return _slot_payload(slot, db, user.id, sec_name, course_name, sprint.section_id)
 
 
 @router.get("/sprints")
@@ -606,7 +674,7 @@ def list_slots(
             "course_name": course_name,
             "batch_key": sprint.batch_key,
         },
-        "slots": [_slot_payload(s, db, user.id, sec_name, course_name) for s in slots],
+        "slots": [_slot_payload(s, db, user.id, sec_name, course_name, section_id) for s in slots],
     }
 
 
@@ -1001,3 +1069,85 @@ def save_viva_scores(
         updated += 1
     db.commit()
     return {"saved": updated}
+
+
+@router.post("/clear-published")
+def clear_published_slots(
+    data: VivaClearPublishedRequest,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Delete published sprint(s) for a day/batch/section — does not touch other sprint history."""
+    q = db.query(models.VivaSprint)
+    if data.sprint_id:
+        q = q.filter(models.VivaSprint.id == data.sprint_id)
+    elif data.batch_key:
+        q = q.filter(models.VivaSprint.batch_key == data.batch_key)
+    elif data.slot_date:
+        q = q.filter(models.VivaSprint.slot_date == data.slot_date)
+        if data.section_id:
+            q = q.filter(models.VivaSprint.section_id == data.section_id)
+    else:
+        raise HTTPException(status_code=400, detail="Provide sprint_id, batch_key, or slot_date")
+    sprints = q.all()
+    if not sprints:
+        raise HTTPException(status_code=404, detail="No matching sprints")
+    ids = [s.id for s in sprints]
+    db.query(models.VivaMemberScore).filter(models.VivaMemberScore.sprint_id.in_(ids)).delete(
+        synchronize_session=False
+    )
+    for sprint in sprints:
+        db.delete(sprint)
+    db.commit()
+    return {"deleted_sprints": len(sprints), "sprint_ids": ids}
+
+
+@router.get("/roster/matrix")
+def roster_matrix(
+    batch_key: str | None = None,
+    slot_date: dt_date | None = None,
+    section_id: int | None = None,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Master matrix: every slot per section with Open / Off / Booked."""
+    sprint_q = db.query(models.VivaSprint)
+    if batch_key:
+        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+    elif slot_date:
+        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    else:
+        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
+    if section_id:
+        sprint_q = sprint_q.filter(models.VivaSprint.section_id == section_id)
+    sprints = sprint_q.order_by(
+        models.VivaSprint.slot_date, models.VivaSprint.section_id, models.VivaSprint.id
+    ).all()
+    rows: list[dict] = []
+    for sprint in sprints:
+        sec_name, course_name = _section_meta(db, sprint.section_id)
+        slots = (
+            db.query(models.VivaSlot)
+            .filter(models.VivaSlot.sprint_id == sprint.id)
+            .order_by(models.VivaSlot.start_at)
+            .all()
+        )
+        for slot in slots:
+            p = _slot_payload(
+                slot, db, section_name=sec_name, course_name=course_name, section_id=sprint.section_id
+            )
+            rows.append(
+                {
+                    "slot_date": sprint.slot_date.isoformat(),
+                    "slot_start": p["start_at"],
+                    "slot_end": p["end_at"],
+                    "section_id": sprint.section_id,
+                    "section_name": sec_name,
+                    "course_name": course_name,
+                    "sprint_label": sprint.sprint_label,
+                    "lead_name": p["lead_name"] or "—",
+                    "team_name": p["team_name"] or "—",
+                    "booking_status": p["booking_status"],
+                }
+            )
+    return {"rows": rows, "batch_key": batch_key, "slot_date": slot_date.isoformat() if slot_date else None}
