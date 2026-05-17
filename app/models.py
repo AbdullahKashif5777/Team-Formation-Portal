@@ -146,3 +146,22 @@ class VivaSlot(Base):
     __table_args__ = (
         UniqueConstraint("sprint_id", "claimed_by_lead_id", name="uix_viva_one_slot_per_lead_per_sprint"),
     )
+
+
+class VivaMemberScore(Base):
+    """Per-member viva score for a sprint (teacher grading sheet)."""
+    __tablename__ = "viva_member_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sprint_id = Column(Integer, ForeignKey("viva_sprints.id", ondelete="CASCADE"), nullable=False, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    member_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    score = Column(Float, nullable=True)
+    notes = Column(String(500), nullable=True)
+    updated_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sprint = relationship("VivaSprint", backref="member_scores")
+    member = relationship("User", foreign_keys=[member_id])
+
+    __table_args__ = (UniqueConstraint("sprint_id", "member_id", name="uix_viva_score_sprint_member"),)

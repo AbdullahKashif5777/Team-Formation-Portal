@@ -904,6 +904,48 @@ def send_lead_removed_notice(
     )
 
 
+def send_viva_slot_booked(
+    to_email: str,
+    recipient_name: str,
+    student_id: str | None,
+    team_name: str,
+    course_name: str,
+    section_name: str,
+    sprint_label: str,
+    slot_date: str,
+    time_range: str,
+    day: str,
+):
+    template_data = build_standard_template_data(
+        student_name=recipient_name,
+        student_id=student_id,
+        course_name=course_name,
+        section_name=section_name,
+        event_type="Viva Slot Confirmed",
+        contact_email=to_email,
+        team_name=_norm(team_name),
+        sprint_label=_norm(sprint_label),
+        slot_date=_norm(slot_date),
+        time_range=_norm(time_range),
+        day=_norm(day),
+    )
+    body_html = _render_html(
+        """
+        <div>
+          <p>Hello {{ student_name }},</p>
+          <p>Your team <strong>{{ team_name }}</strong> has a confirmed viva slot.</p>
+          <p><strong>Sprint:</strong> {{ sprint_label }}<br>
+             <strong>Day:</strong> {{ day }} · <strong>Date:</strong> {{ slot_date }}<br>
+             <strong>Time:</strong> {{ time_range }}</p>
+          <p><strong>Course:</strong> {{ course_name }} · <strong>Section:</strong> {{ section_name }}</p>
+          <p>This booking cannot be changed without administrator approval.</p>
+        </div>
+        """,
+        template_data,
+    )
+    _send(to_email, build_subject(template_data), render_master_email(template_data=template_data, body_html=body_html))
+
+
 def send_member_team_removed_notice(
     member_email: str,
     member_name: str,
