@@ -29,6 +29,12 @@
     .schedule-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 12px; }
     .schedule-table th, .schedule-table td { padding: 10px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
     .tiny { font-size: 0.8rem; color: var(--text-3); }
+    .viva-bulk-card {
+      border: 2px solid rgba(139,92,246,0.5);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(139,92,246,0.12), rgba(10,16,40,0.2));
+    }
+    .viva-bulk-title { margin: 0 0 6px; font-size: 1.05rem; color: var(--violet-light); font-weight: 700; }
   </style>
 </head>
 <body>
@@ -40,8 +46,9 @@
   </div>
 
   <div id="admin-panel" style="display:none">
-    <div class="glass" style="padding:16px;margin-bottom:16px;">
-      <div class="form-label">Same date — generate for multiple sections (each section has its own slot grid)</div>
+    <div class="glass viva-bulk-card" style="padding:16px;margin-bottom:16px;">
+      <h2 class="viva-bulk-title">All sections — one viva day</h2>
+      <p class="tiny" style="margin-bottom:10px;">Select every section you teach. Same date and time for all; configure each section in the tabs below, then publish once.</p>
       <div class="viva-form">
         <input id="v-sprint-label" class="form-input" placeholder="Sprint label" value="Viva Week 1"/>
         <input id="v-day" class="form-input" placeholder="Day" value="Monday"/>
@@ -55,6 +62,10 @@
         <input id="v-end" class="form-input" type="time" value="17:00"/>
       </div>
       <div class="form-label" style="margin-top:12px;">Sections to include</div>
+      <div style="margin:6px 0;display:flex;gap:8px;">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllSections(true)">Select all</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllSections(false)">Clear</button>
+      </div>
       <div id="section-pick" class="section-pick tiny">Loading sections…</div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-sm" onclick="generateBulk()">Generate for selected sections</button>
@@ -149,13 +160,17 @@
     coursesData.forEach(function(c) {
       html += '<div style="margin-bottom:8px;font-weight:600;">' + esc(c.name) + '</div>';
       (c.sections || []).forEach(function(s) {
-        var checked = !urlSectionId || s.id === urlSectionId ? ' checked' : '';
+        var checked = urlSectionId ? (s.id === urlSectionId ? ' checked' : '') : ' checked';
         html += '<label><input type="checkbox" class="viva-sec-cb" value="' + s.id + '" data-course="' + esc(c.name) + '" data-section="' + esc(s.name) + '"' + checked + '> ' + esc(c.name) + ' · ' + esc(s.name) + '</label>';
       });
     });
     document.getElementById('section-pick').innerHTML = html || '<span class="tiny">No sections</span>';
     renderSectionTabs();
   }
+
+  window.selectAllSections = function(on) {
+    document.querySelectorAll('.viva-sec-cb').forEach(function(el) { el.checked = !!on; });
+  };
 
   function selectedSectionIds() {
     return Array.from(document.querySelectorAll('.viva-sec-cb:checked')).map(function(el) { return parseInt(el.value, 10); });

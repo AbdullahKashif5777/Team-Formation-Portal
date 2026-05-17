@@ -70,6 +70,15 @@
       align-items: center;
       flex-wrap: wrap;
     }
+    .viva-member-card {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(139,92,246,0.08);
+      border: 1px solid rgba(139,92,246,0.25);
+      font-size: 0.88rem;
+      color: var(--text-2);
+    }
+    .viva-member-time { font-weight: 700; color: var(--violet-light); margin-top: 6px; font-size: 1rem; }
     @media (max-width: 768px) {
       .team-grid { max-height: min(56dvh, 480px); }
       #transfer-section-select { min-width: 0 !important; width: 100%; max-width: 100%; }
@@ -164,6 +173,12 @@
           <div class="divider"></div>
           <div class="form-label" style="margin-bottom:10px;">Your Teammates</div>
           <div id="teammates-list"></div>
+        </div>
+
+        <div id="viva-slot-wrap" style="display:none; margin-top:16px;">
+          <div class="divider"></div>
+          <div class="form-label" style="margin-bottom:10px;">Team Viva Slot</div>
+          <div id="viva-slot-body" class="viva-member-card">Loading…</div>
         </div>
 
         <div id="cancel-request-wrap" style="display:none; margin-top:16px;">
@@ -385,6 +400,40 @@ function renderTabs() {
   `).join('');
 }
 
+async function loadMemberVivaSlot() {
+  const wrap = document.getElementById('viva-slot-wrap');
+  const body = document.getElementById('viva-slot-body');
+  if (!wrap || !body || !currentSectionId) return;
+  const s = sectionsData.find(sec => sec.section_id == currentSectionId);
+  if (!s || s.status !== 'accepted') {
+    wrap.style.display = 'none';
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/api/viva/member-team-slot?section_id=${currentSectionId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) { wrap.style.display = 'none'; return; }
+    const data = await res.json();
+    wrap.style.display = 'block';
+    if (!data.slot) {
+      body.innerHTML = '<div class="tiny">No viva slot booked yet. Your lead will choose a time when slots are published.</div>';
+      return;
+    }
+    const slot = data.slot;
+    const start = new Date(slot.start_at);
+    const end = new Date(slot.end_at);
+    const dateStr = data.slot_date ? new Date(data.slot_date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) : '';
+    const timeStr = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' – ' + end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    body.innerHTML = '<div><strong>' + (data.team_name || 'Your team') + '</strong> · Lead: ' + (data.lead_name || '—') + '</div>'
+      + (data.sprint_label ? '<div class="tiny" style="margin-top:4px;">' + data.sprint_label + '</div>' : '')
+      + '<div class="viva-member-time">' + (data.day ? data.day + ' · ' : '') + dateStr + '</div>'
+      + '<div class="viva-member-time">' + timeStr + '</div>';
+  } catch (_) {
+    wrap.style.display = 'none';
+  }
+}
+
 function renderCurrentSection() {
   const s = sectionsData.find(sec => sec.section_id == currentSectionId);
   if (s && s.role === 'lead') {
@@ -485,6 +534,7 @@ function renderCurrentSection() {
 
   // Filter & Render Teams
   filterTeams();
+  loadMemberVivaSlot();
 }
 
 async function loadCoursesOnce() {

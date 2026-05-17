@@ -461,6 +461,8 @@ def list_slots(
         .order_by(models.VivaSlot.start_at)
         .all()
     )
+    if user.role != "admin":
+        slots = [s for s in slots if s.status != "off"]
     sec_name, course_name = _section_meta(db, section_id)
     return {
         "sprint": {
@@ -564,3 +566,76 @@ def viva_schedule_all(
         # Include open/unclaimed rows for admin overview? User asked for sheet with teams - locked only is fine
     rows.sort(key=lambda r: (r["slot_date"], r["slot_start"], r["course_name"], r["section_name"]))
     return {"rows": rows, "batch_key": batch_key, "slot_date": slot_date.isoformat() if slot_date else None}
+
+
+@router.get("/member-team-slot")
+def member_team_viva_slot(
+    section_id: int,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Read-only: accepted member sees their team's claimed viva slot (if any)."""
+    membership = (
+        db.query(models.TeamMembership)
+        .join(models.Team, models.Team.id == models.TeamMembership.team_id)
+        .options(joinedload(models.TeamMembership.team).joinedload(models.Team.lead))
+        .filter(
+            models.TeamMembership.member_id == user.id,
+            models.TeamMembership.status == "accepted",
+            models.Team.section_id == section_id,
+        )
+        .first()
+    )
+    sec_name, course_name = _section_meta(db, section_id)
+    if not membership or not membership.team:
+        return {"slot": None, "course_name": course_name, "section_name": sec_name}
+
+    team = membership.team
+    sprint = (
+        db.query(models.VivaSprint)
+        .filter(models.VivaSprint.section_id == section_id, models.VivaSprint.published.is_(True))
+        .order_by(models.VivaSprint.id.desc())
+        .first()
+    )
+    if not sprint:
+        return {
+            "slot": None,
+            "course_name": course_name,
+            "section_name": sec_name,
+            "team_name": team.name,
+            "lead_name": team.lead.name if team.lead else None,
+        }
+
+    slot = (
+        db.query(models.VivaSlot)
+        .filter(
+            models.VivaSlot.sprint_id == sprint.id,
+            models.VivaSlot.status == "locked",
+            models.VivaSlot.team_id == team.id,
+        )
+        .first()
+    )
+    if not slot and team.lead_id:
+        slot = (
+            db.query(models.VivaSlot)
+            .filter(
+                models.VivaSlot.sprint_id == sprint.id,
+                models.VivaSlot.status == "locked",
+                models.VivaSlot.claimed_by_lead_id == team.lead_id,
+            )
+            .first()
+        )
+
+    payload = {
+        "course_name": course_name,
+        "section_name": sec_name,
+        "team_name": team.name,
+        "lead_name": team.lead.name if team.lead else None,
+        "sprint_label": sprint.sprint_label,
+        "slot_date": sprint.slot_date.isoformat(),
+        "day": sprint.day,
+        "slot": None,
+    }
+    if slot:
+        payload["slot"] = _slot_payload(slot, db, section_name=sec_name, course_name=course_name)
+    return payload
