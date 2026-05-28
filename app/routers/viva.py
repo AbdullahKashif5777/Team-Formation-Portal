@@ -158,7 +158,8 @@ def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) 
 
 
 def _team_meta_from_team(db: Session, team: models.Team) -> tuple[str, str, int]:
-    return _section_meta(db, team.section_id)
+    sec_name, course_name = _section_meta(db, team.section_id)
+    return sec_name, course_name, team.section_id
 
 
 def _lead_time_conflict(db: Session, user_id: int, slot: models.VivaSlot, sprint: models.VivaSprint) -> models.VivaSlot | None:

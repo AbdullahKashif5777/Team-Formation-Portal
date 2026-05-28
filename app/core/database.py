@@ -275,20 +275,16 @@ def _ensure_performance_indexes() -> None:
         "ALTER TABLE viva_sprints ADD COLUMN IF NOT EXISTS is_shared_pool BOOLEAN DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS ix_viva_sprints_sprint_number ON viva_sprints (sprint_number)",
         "ALTER TABLE viva_slots ADD COLUMN IF NOT EXISTS note VARCHAR(200)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uix_viva_batch_section ON viva_batch_sections (batch_key, section_id)",
+        "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_batch_key ON viva_batch_sections (batch_key)",
+        "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_section_id ON viva_batch_sections (section_id)",
     ]
-    with engine.begin() as conn:
-        for sql in stmts:
-            conn.execute(text(sql))
-
-    # Indexes for the shared-pool membership table (created via ORM metadata).
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_viva_batch_section ON viva_batch_sections (batch_key, section_id)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_batch_key ON viva_batch_sections (batch_key)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_section_id ON viva_batch_sections (section_id)"))
-    except Exception:
-        # Table may not exist yet in some envs until create_all runs; that's fine.
-        return
+    for sql in stmts:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(sql))
+        except Exception:
+            pass
 
 
 def create_tables() -> None:
