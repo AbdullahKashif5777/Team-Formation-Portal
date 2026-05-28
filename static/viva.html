@@ -7,7 +7,14 @@
   <link rel="stylesheet" href="/static/style.css?v=16"/>
   <style>
     .viva-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    .viva-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .viva-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      position: relative;
+      z-index: 2; /* ensure slots stay clickable above nearby UI */
+    }
     .viva-slot {
       min-width: 110px; padding: 10px 12px; border-radius: 10px; cursor: pointer;
       border: 1px solid var(--border-subtle); background: rgba(255,255,255,0.04);
@@ -35,7 +42,15 @@
       background: linear-gradient(180deg, rgba(139,92,246,0.12), rgba(10,16,40,0.2));
     }
     .viva-bulk-title { margin: 0 0 6px; font-size: 1.05rem; color: var(--violet-light); font-weight: 700; }
-    .admin-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; align-items: center; }
+    .admin-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 14px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
     .admin-sheet-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .admin-sheet-tab {
       padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
