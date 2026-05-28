@@ -778,13 +778,13 @@ def claim_slot(
         db.query(models.VivaSlot)
         .filter(
             models.VivaSlot.sprint_id == sprint.id,
-            models.VivaSlot.claimed_by_lead_id == user.id,
+            models.VivaSlot.team_id == team.id,
             models.VivaSlot.status == "locked",
         )
         .first()
     )
     if existing:
-        raise HTTPException(status_code=400, detail="You already claimed a slot for this sprint")
+        raise HTTPException(status_code=400, detail="This team already claimed a slot for this sprint")
 
     if sprint.sprint_number:
         num_claim = _team_locked_for_sprint_number(db, team.id, sprint.sprint_number)
