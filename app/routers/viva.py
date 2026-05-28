@@ -142,6 +142,8 @@ def _resolve_sprint_for_section(
 
 
 def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) -> models.Team | None:
+    """Find a team the user leads that can still claim this sprint (not yet booked)."""
+    candidates: list[models.Team] = []
     if sprint.is_shared_pool and sprint.batch_key:
         try:
             rows = (
@@ -156,9 +158,31 @@ def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) 
             sid = row[0]
             team = _lead_team(db, user_id, int(sid))
             if team:
-                return team
-        return None
-    return _lead_team(db, user_id, sprint.section_id)
+                candidates.append(team)
+    else:
+        team = _lead_team(db, user_id, sprint.section_id)
+        if team:
+            candidates.append(team)
+    # Prefer a team that hasn't already claimed this sprint
+    for team in candidates:
+        already = (
+            db.query(models.VivaSlot)
+            .filter(
+                models.VivaSlot.sprint_id == sprint.id,
+                models.VivaSlot.team_id == team.id,
+                models.VivaSlot.status == "locked",
+            )
+            .first()
+        )
+        if not already:
+            # Also check sprint_number restriction
+            if sprint.sprint_number:
+                num_claim = _team_locked_for_sprint_number(db, team.id, sprint.sprint_number)
+                if num_claim:
+                    continue
+            return team
+    # All teams already booked; return first one so caller can show "already claimed"
+    return candidates[0] if candidates else None
 
 
 def _team_meta_from_team(db: Session, team: models.Team) -> tuple[str, str, int]:
@@ -812,7 +836,8 @@ def list_sprints(
             raise HTTPException(status_code=403, detail="Not authorized")
     q = _sprints_query_for_section(db, section_id).order_by(models.VivaSprint.id.desc())
     sprints = q.all()
-    team = db.query(models.Team).filter(models.Team.lead_id == user.id).first() if user.role != "admin" else None
+    teams = db.query(models.Team).filter(models.Team.lead_id == user.id).all() if user.role != "admin" else []
+    team_ids = [t.id for t in teams]
     out = []
     seen_shared: set[tuple] = set()
     for s in sprints:
@@ -832,34 +857,40 @@ def list_sprints(
             "batch_key": s.batch_key,
             "is_shared_pool": s.is_shared_pool,
         }
-        if team:
-            this_claim = (
-                db.query(models.VivaSlot)
-                .filter(
-                    models.VivaSlot.sprint_id == s.id,
-                    models.VivaSlot.team_id == team.id,
-                    models.VivaSlot.status == "locked",
+        if teams:
+            any_claim = False
+            all_blocked = True
+            blocked_reason = None
+            for team in teams:
+                this_claim = (
+                    db.query(models.VivaSlot)
+                    .filter(
+                        models.VivaSlot.sprint_id == s.id,
+                        models.VivaSlot.team_id == team.id,
+                        models.VivaSlot.status == "locked",
+                    )
+                    .first()
                 )
-                .first()
-            )
-            blocked = None
-            if s.sprint_number:
-                blocked = _team_locked_for_sprint_number(db, team.id, s.sprint_number)
-            else:
-                blocked = _team_locked_for_sprint_label(db, team.id, section_id, s.sprint_label)
-            item["team_has_slot"] = bool(this_claim)
-            item["can_claim"] = bool(
-                s.published
-                and not this_claim
-                and (not blocked or blocked.sprint_id == s.id)
-            )
-            if blocked and blocked.sprint_id != s.id:
-                other_sp = db.query(models.VivaSprint).filter(models.VivaSprint.id == blocked.sprint_id).first()
-                lbl = f"Sprint {s.sprint_number}" if s.sprint_number else s.sprint_label
-                item["blocked_reason"] = (
-                    f"Team already booked {lbl} on "
-                    f"{other_sp.slot_date.isoformat() if other_sp else 'another day'}"
-                )
+                if this_claim:
+                    any_claim = True
+                blocked = None
+                if s.sprint_number:
+                    blocked = _team_locked_for_sprint_number(db, team.id, s.sprint_number)
+                else:
+                    blocked = _team_locked_for_sprint_label(db, team.id, section_id, s.sprint_label)
+                if not this_claim and (not blocked or blocked.sprint_id == s.id):
+                    all_blocked = False
+                elif blocked and blocked.sprint_id != s.id and not blocked_reason:
+                    other_sp = db.query(models.VivaSprint).filter(models.VivaSprint.id == blocked.sprint_id).first()
+                    lbl = f"Sprint {s.sprint_number}" if s.sprint_number else s.sprint_label
+                    blocked_reason = (
+                        f"Team already booked {lbl} on "
+                        f"{other_sp.slot_date.isoformat() if other_sp else 'another day'}"
+                    )
+            item["team_has_slot"] = any_claim
+            item["can_claim"] = bool(s.published and not any_claim and not all_blocked)
+            if all_blocked and blocked_reason:
+                item["blocked_reason"] = blocked_reason
         out.append(item)
     return out
 

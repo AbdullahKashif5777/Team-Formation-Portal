@@ -613,7 +613,7 @@
     var list = await api('/api/viva/sprints?section_id=' + activeSectionId);
     var sel = document.getElementById('v-sprint-sel');
     sel.innerHTML = list.length
-      ? list.map(function(s) { return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + (s.published ? '' : ' draft') + '</option>'; }).join('')
+      ? list.map(function(s) { return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + ' (' + (s.day || '') + ')' + (s.published ? '' : ' draft') + '</option>'; }).join('')
       : '<option value="">No sprints</option>';
     if (list.length) {
       var prefer = sectionSprints[activeSectionId] && sectionSprints[activeSectionId].sprint_id;
@@ -700,7 +700,7 @@
       ? list.map(function(s) {
           var tag = s.team_has_slot ? ' ✓ booked' : (s.blocked_reason ? ' 🔒' : '');
           var draft = !s.published ? ' (upcoming)' : '';
-          return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + tag + draft + '</option>';
+          return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + ' (' + (s.day || '') + ')' + tag + draft + '</option>';
         }).join('')
       : '<option value="">No viva sprints yet</option>';
     if (list.length) { sel.value = String(list[0].id); await loadSlots(); }
