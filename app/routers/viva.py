@@ -95,18 +95,18 @@ def _section_in_batch(db: Session, section_id: int, batch_key: str) -> bool:
 def _register_batch_sections(db: Session, batch_key: str, section_ids: list[int]) -> None:
     # Backwards-compatible: if table isn't created yet, skip registration.
     try:
-        db.query(models.VivaBatchSection).limit(1).all()
+        existing = (
+            db.query(models.VivaBatchSection.section_id)
+            .filter(models.VivaBatchSection.batch_key == batch_key)
+            .all()
+        )
+        existing_sids = {int(r[0]) for r in existing}
     except Exception:
         db.rollback()
         return
-    for sid in section_ids:
-        exists = (
-            db.query(models.VivaBatchSection)
-            .filter(models.VivaBatchSection.batch_key == batch_key, models.VivaBatchSection.section_id == sid)
-            .first()
-        )
-        if not exists:
-            db.add(models.VivaBatchSection(batch_key=batch_key, section_id=sid))
+    new_sids = [sid for sid in section_ids if sid not in existing_sids]
+    for sid in new_sids:
+        db.add(models.VivaBatchSection(batch_key=batch_key, section_id=sid))
 
 
 def _section_can_access_sprint(db: Session, section_id: int, sprint: models.VivaSprint) -> bool:
@@ -747,8 +747,6 @@ def claim_slot(
     team = _lead_team_for_sprint(db, user.id, sprint)
     if not team:
         raise HTTPException(status_code=403, detail="You are not a team lead for this viva batch")
-    if data.section_id and team.section_id != data.section_id:
-        raise HTTPException(status_code=403, detail="Not authorized for this section")
     if not _section_can_access_sprint(db, team.section_id, sprint):
         raise HTTPException(status_code=403, detail="Your section is not part of this viva batch")
 
@@ -809,11 +807,12 @@ def list_sprints(
     db: Session = Depends(get_db),
 ):
     if user.role != "admin":
-        if not _lead_team(db, user.id, section_id):
-            raise HTTPException(status_code=403, detail="Not authorized for this section")
+        team_any = db.query(models.Team).filter(models.Team.lead_id == user.id).first()
+        if not team_any:
+            raise HTTPException(status_code=403, detail="Not authorized")
     q = _sprints_query_for_section(db, section_id).order_by(models.VivaSprint.id.desc())
     sprints = q.all()
-    team = _lead_team(db, user.id, section_id) if user.role != "admin" else None
+    team = db.query(models.Team).filter(models.Team.lead_id == user.id).first() if user.role != "admin" else None
     out = []
     seen_shared: set[tuple] = set()
     for s in sprints:
@@ -873,8 +872,9 @@ def list_slots(
     db: Session = Depends(get_db),
 ):
     if user.role != "admin":
-        if not _lead_team(db, user.id, section_id):
-            raise HTTPException(status_code=403, detail="Not authorized for this section")
+        team_any = db.query(models.Team).filter(models.Team.lead_id == user.id).first()
+        if not team_any:
+            raise HTTPException(status_code=403, detail="Not authorized")
 
     sprint = _resolve_sprint_for_section(db, section_id, sprint_id, published_only=False)
     if not sprint:
