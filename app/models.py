@@ -160,7 +160,7 @@ class VivaSlot(Base):
     team = relationship("Team")
 
     __table_args__ = (
-        UniqueConstraint("sprint_id", "claimed_by_lead_id", name="uix_viva_one_slot_per_lead_per_sprint"),
+        UniqueConstraint("sprint_id", "team_id", name="uix_viva_one_slot_per_team_per_sprint"),
     )
 
 

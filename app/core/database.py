@@ -278,6 +278,8 @@ def _ensure_performance_indexes() -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uix_viva_batch_section ON viva_batch_sections (batch_key, section_id)",
         "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_batch_key ON viva_batch_sections (batch_key)",
         "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_section_id ON viva_batch_sections (section_id)",
+        # Allow same lead to book multiple slots (one per team) in same sprint
+        "ALTER TABLE viva_slots DROP CONSTRAINT IF EXISTS uix_viva_one_slot_per_lead_per_sprint",
     ]
     for sql in stmts:
         try:
