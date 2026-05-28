@@ -209,39 +209,45 @@ def _section_lead_ids(db: Session, section_id: int) -> list[int]:
 
 
 def _notify_viva_published(db: Session, sprints: list[models.VivaSprint]) -> None:
-    """Tell section leads that new viva slots are available."""
-    seen: set[int] = set()
-    for sprint in sprints:
-        section_ids: list[int] = [sprint.section_id]
-        if sprint.is_shared_pool and sprint.batch_key:
-            rows = (
-                db.query(models.VivaBatchSection.section_id)
-                .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
-                .all()
-            )
-            section_ids = [int(r[0]) for r in rows]
-        for sid in section_ids:
-            sec_name, course_name = _section_meta(db, sid)
-            for lead_id in _section_lead_ids(db, sid):
-                if lead_id in seen:
-                    continue
-                seen.add(lead_id)
-                manager.fire(
-                    manager.send_to(
-                        lead_id,
-                        "viva_published",
-                        {
-                            "section_id": sid,
-                            "section_name": sec_name,
-                            "course_name": course_name,
-                            "sprint_label": sprint.sprint_label,
-                            "sprint_number": sprint.sprint_number,
-                            "slot_date": sprint.slot_date.isoformat(),
-                            "day": sprint.day,
-                            "sprint_id": sprint.id,
-                        },
-                    )
+    """Tell section leads that new viva slots are available (best-effort, non-blocking)."""
+    try:
+        seen: set[int] = set()
+        for sprint in sprints:
+            section_ids: list[int] = [sprint.section_id]
+            if sprint.is_shared_pool and sprint.batch_key:
+                rows = (
+                    db.query(models.VivaBatchSection.section_id)
+                    .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
+                    .all()
                 )
+                section_ids = [int(r[0]) for r in rows]
+            for sid in section_ids:
+                sec_name, course_name = _section_meta(db, sid)
+                for lead_id in _section_lead_ids(db, sid):
+                    if lead_id in seen:
+                        continue
+                    seen.add(lead_id)
+                    try:
+                        manager.fire(
+                            manager.send_to(
+                                lead_id,
+                                "viva_published",
+                                {
+                                    "section_id": sid,
+                                    "section_name": sec_name,
+                                    "course_name": course_name,
+                                    "sprint_label": sprint.sprint_label,
+                                    "sprint_number": sprint.sprint_number,
+                                    "slot_date": sprint.slot_date.isoformat(),
+                                    "day": sprint.day,
+                                    "sprint_id": sprint.id,
+                                },
+                            )
+                        )
+                    except RuntimeError:
+                        pass
+    except Exception:
+        pass
 
 
 def _team_locked_for_sprint_label(
