@@ -270,6 +270,7 @@ def _ensure_performance_indexes() -> None:
         "ALTER TABLE viva_sprints ADD COLUMN IF NOT EXISTS sprint_number INTEGER",
         "ALTER TABLE viva_sprints ADD COLUMN IF NOT EXISTS is_shared_pool BOOLEAN DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS ix_viva_sprints_sprint_number ON viva_sprints (sprint_number)",
+        "ALTER TABLE viva_slots ADD COLUMN IF NOT EXISTS note VARCHAR(200)",
     ]
     with engine.begin() as conn:
         for sql in stmts:

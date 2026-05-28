@@ -62,28 +62,40 @@ def _sprint_label_for_number(n: int) -> str:
 
 
 def _batch_keys_for_section(db: Session, section_id: int) -> list[str]:
-    rows = (
-        db.query(models.VivaBatchSection.batch_key)
-        .filter(models.VivaBatchSection.section_id == section_id)
-        .distinct()
-        .all()
-    )
-    return [r[0] if isinstance(r, tuple) else r for r in rows]
+    # Backwards-compatible: if table isn't created yet, behave like non-shared mode.
+    try:
+        rows = (
+            db.query(models.VivaBatchSection.batch_key)
+            .filter(models.VivaBatchSection.section_id == section_id)
+            .distinct()
+            .all()
+        )
+        return [r[0] if isinstance(r, tuple) else r for r in rows]
+    except Exception:
+        return []
 
 
 def _section_in_batch(db: Session, section_id: int, batch_key: str) -> bool:
-    return (
-        db.query(models.VivaBatchSection)
-        .filter(
-            models.VivaBatchSection.batch_key == batch_key,
-            models.VivaBatchSection.section_id == section_id,
+    try:
+        return (
+            db.query(models.VivaBatchSection)
+            .filter(
+                models.VivaBatchSection.batch_key == batch_key,
+                models.VivaBatchSection.section_id == section_id,
+            )
+            .first()
+            is not None
         )
-        .first()
-        is not None
-    )
+    except Exception:
+        return False
 
 
 def _register_batch_sections(db: Session, batch_key: str, section_ids: list[int]) -> None:
+    # Backwards-compatible: if table isn't created yet, skip registration.
+    try:
+        db.query(models.VivaBatchSection).limit(1).all()
+    except Exception:
+        return
     for sid in section_ids:
         exists = (
             db.query(models.VivaBatchSection)
@@ -128,11 +140,14 @@ def _resolve_sprint_for_section(
 
 def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) -> models.Team | None:
     if sprint.is_shared_pool and sprint.batch_key:
-        rows = (
-            db.query(models.VivaBatchSection.section_id)
-            .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
-            .all()
-        )
+        try:
+            rows = (
+                db.query(models.VivaBatchSection.section_id)
+                .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
+                .all()
+            )
+        except Exception:
+            rows = []
         for row in rows:
             sid = row[0] if isinstance(row, tuple) else row.section_id
             team = _lead_team(db, user_id, int(sid))
@@ -260,9 +275,12 @@ def _cleanup_batch_sections(db: Session, batch_key: str | None) -> None:
         return
     remaining = db.query(models.VivaSprint).filter(models.VivaSprint.batch_key == batch_key).count()
     if remaining == 0:
-        db.query(models.VivaBatchSection).filter(models.VivaBatchSection.batch_key == batch_key).delete(
-            synchronize_session=False
-        )
+        try:
+            db.query(models.VivaBatchSection).filter(models.VivaBatchSection.batch_key == batch_key).delete(
+                synchronize_session=False
+            )
+        except Exception:
+            return
 
 
 def _send_viva_booking_emails(
@@ -276,7 +294,9 @@ def _send_viva_booking_emails(
     lead = db.query(models.User).filter(models.User.id == team.lead_id).first()
     time_label = f"{slot.start_at.strftime('%H:%M')} – {slot.end_at.strftime('%H:%M')}"
     date_label = sprint.slot_date.isoformat()
+    seen_emails: set[str] = set()
     if lead and lead.email:
+        seen_emails.add(lead.email.lower())
         email_utils.send_async(
             email_utils.send_viva_slot_booked,
             lead.email,
@@ -298,6 +318,7 @@ def _send_viva_booking_emails(
     )
     for m in members:
         if m.member and m.member.email:
+            seen_emails.add(m.member.email.lower())
             email_utils.send_async(
                 email_utils.send_viva_slot_booked,
                 m.member.email,
@@ -311,6 +332,42 @@ def _send_viva_booking_emails(
                 time_label,
                 sprint.day,
             )
+
+    # Notify whole section roster as well (all accepted members across teams).
+    # Additive behavior; keeps existing team-only emails.
+    try:
+        roster_members = (
+            db.query(models.TeamMembership)
+            .join(models.Team, models.Team.id == models.TeamMembership.team_id)
+            .options(joinedload(models.TeamMembership.member))
+            .filter(
+                models.Team.section_id == team.section_id,
+                models.TeamMembership.status == "accepted",
+            )
+            .all()
+        )
+    except Exception:
+        roster_members = []
+    for rm in roster_members:
+        if not rm.member or not rm.member.email:
+            continue
+        e = rm.member.email.lower()
+        if e in seen_emails:
+            continue
+        seen_emails.add(e)
+        email_utils.send_async(
+            email_utils.send_viva_slot_booked,
+            rm.member.email,
+            rm.member.name,
+            rm.member.student_id,
+            team.name,
+            course_name,
+            section_name,
+            sprint.sprint_label,
+            date_label,
+            time_label,
+            sprint.day,
+        )
 
 
 def _roster_row_from_slot(
@@ -383,6 +440,7 @@ def _slot_payload(
         "lead_name": lead_name,
         "team_id": slot.team_id,
         "team_name": team_name,
+        "note": getattr(slot, "note", None),
         "section_name": section_name,
         "course_name": course_name,
         "section_id": section_id,
@@ -500,6 +558,11 @@ class VivaClearPublishedRequest(BaseModel):
     slot_date: dt_date | None = None
     sprint_id: int | None = None
     section_id: int | None = None
+
+
+class VivaSlotNoteRequest(BaseModel):
+    slot_id: int
+    note: str | None = None
 
 
 @router.post("/generate")
@@ -1050,6 +1113,29 @@ def set_all_slot_status(
     return {"updated": len(slots), "status": status}
 
 
+@router.put("/slot-note")
+def set_slot_note(
+    data: VivaSlotNoteRequest,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    slot = db.query(models.VivaSlot).filter(models.VivaSlot.id == data.slot_id).first()
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    note = (data.note or "").strip()
+    slot.note = note or None
+    db.commit()
+    sprint = db.query(models.VivaSprint).filter(models.VivaSprint.id == slot.sprint_id).first()
+    sec_name, course_name = _section_meta(db, sprint.section_id if sprint else 0)
+    return _slot_payload(
+        slot,
+        db,
+        section_name=sec_name,
+        course_name=course_name,
+        section_id=(sprint.section_id if sprint else None),
+    )
+
+
 @router.get("/roster/daily")
 def roster_by_day(
     slot_date: dt_date,
@@ -1074,6 +1160,64 @@ def roster_by_day(
         for slot in slots:
             rows.append(_roster_row_from_slot(slot, sprint, sec_name, course_name, db))
     rows.sort(key=lambda r: (r["slot_start"], r["course_name"], r["section_name"]))
+    return {"slot_date": slot_date.isoformat(), "rows": rows}
+
+
+@router.get("/roster/daily-all")
+def roster_daily_all(
+    slot_date: dt_date,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Day sheet (admin): every slot (Open/Off/Booked) with team + note."""
+    sprints = (
+        db.query(models.VivaSprint)
+        .filter(models.VivaSprint.slot_date == slot_date)
+        .order_by(models.VivaSprint.sprint_number, models.VivaSprint.id)
+        .all()
+    )
+    if not sprints:
+        return {"slot_date": slot_date.isoformat(), "rows": []}
+    seen_shared: set[int] = set()
+    rows: list[dict] = []
+    for sprint in sprints:
+        if getattr(sprint, "is_shared_pool", False) and sprint.id in seen_shared:
+            continue
+        if getattr(sprint, "is_shared_pool", False):
+            seen_shared.add(sprint.id)
+        slots = (
+            db.query(models.VivaSlot)
+            .filter(models.VivaSlot.sprint_id == sprint.id)
+            .order_by(models.VivaSlot.start_at)
+            .all()
+        )
+        for slot in slots:
+            sec_name, course_name = _section_meta(db, sprint.section_id)
+            sid = sprint.section_id
+            if slot.team_id:
+                team = db.query(models.Team).filter(models.Team.id == slot.team_id).first()
+                if team:
+                    sec_name, course_name = _section_meta(db, team.section_id)
+                    sid = team.section_id
+            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sid)
+            rows.append(
+                {
+                    "slot_date": slot_date.isoformat(),
+                    "sprint_id": sprint.id,
+                    "sprint_label": sprint.sprint_label,
+                    "sprint_number": sprint.sprint_number,
+                    "course_name": course_name,
+                    "section_name": sec_name,
+                    "section_id": sid,
+                    "slot_start": p["start_at"],
+                    "slot_end": p["end_at"],
+                    "booking_status": p["booking_status"],
+                    "team_name": p["team_name"] or "—",
+                    "lead_name": p["lead_name"] or "—",
+                    "note": p.get("note"),
+                }
+            )
+    rows.sort(key=lambda r: (r["sprint_number"] or 0, r["slot_start"], r["course_name"], r["section_name"]))
     return {"slot_date": slot_date.isoformat(), "rows": rows}
 
 

@@ -153,6 +153,7 @@ class VivaSlot(Base):
     status = Column(String(10), default="open", nullable=False, index=True)  # open | off | locked
     claimed_by_lead_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String(200), nullable=True)
 
     sprint = relationship("VivaSprint", back_populates="slots")
     claimed_by = relationship("User", foreign_keys=[claimed_by_lead_id])
