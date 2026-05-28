@@ -654,7 +654,7 @@
       var label = fmtTime(s.start_at) + '–' + fmtTime(s.end_at);
       if (role === 'admin') {
         var rem = '<br><small style="color:var(--text-3)">' + esc(timeUntil(s.start_at)) + '</small>';
-        var sub = s.status === 'locked' ? '<br><small>' + esc(s.lead_name) + ' · ' + esc(s.team_name) + '</small>' : '';
+        var sub = s.status === 'locked' ? '<br><small>' + esc(s.lead_name) + ' · ' + esc(s.team_name) + ' · ' + esc(s.course_name || '') + ' ' + esc(s.section_name || '') + '</small>' : '';
         var note = s.note ? '<br><small style="color:var(--accent);font-weight:500">📝 ' + esc(s.note) + '</small>' : '';
         var reset = s.status === 'locked' ? '<button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:0.65rem" onclick="event.stopPropagation();resetSlot(' + s.id + ')">Reset</button>' : '';
         var noteBtn = '<button class="btn btn-ghost btn-sm" style="margin-top:2px;font-size:0.65rem;position:relative;z-index:2" onclick="event.stopPropagation();event.preventDefault();setSlotNote(' + s.id + ')">📝 Note</button>';
@@ -665,11 +665,13 @@
       var mine = s.is_mine || (s.claimed_by_lead_id === userId);
       var rem = '<br><small style="color:var(--text-3)">' + esc(timeUntil(s.start_at)) + '</small>';
       var note = s.note ? '<br><small style="color:var(--accent);font-weight:500">📝 ' + esc(s.note) + '</small>' : '';
+      var secInfo = (s.status === 'locked' && s.course_name) ? '<br><small style="color:var(--text-3)">' + esc(s.course_name) + ' · ' + esc(s.section_name || '') + '</small>' : '';
       var by = (s.status === 'locked' && !mine) ? ('<br><small>Selected by ' + esc(s.lead_name || '—') + ' · ' + esc(s.team_name || '—') + '</small>') : '';
+      var mineLabel = mine ? '<br><small style="color:var(--emerald);font-weight:500">✓ Yours · ' + esc(s.team_name || '') + '</small>' : '';
       var unavail = s.status === 'off' ? '<br><small style="color:var(--rose,#f43f5e)">🚫 Unavailable</small>' : '';
       var draft = (!isPublished && s.status !== 'off') ? '<br><small style="color:var(--text-3);font-style:italic">⏳ Not yet published</small>' : '';
       var cls = s.status + (clickable ? ' lead-clickable' : '') + (!isPublished && s.status !== 'off' ? ' draft-slot' : '');
-      return '<div class="viva-slot ' + cls + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + unavail + draft + (mine ? '<br><small>Yours</small>' : by) + '</div>';
+      return '<div class="viva-slot ' + cls + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + unavail + draft + secInfo + (mineLabel || by) + '</div>';
     }).join('') || '<span class="tiny">No slots</span>';
 
     if (role !== 'admin') {
