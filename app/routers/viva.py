@@ -1361,8 +1361,8 @@ def clear_published_slots(
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Delete published sprint(s) for a day/batch/section — does not touch other sprint history."""
-    q = db.query(models.VivaSprint)
+    """Unpublish sprint(s) for a day/batch/section — sets published=False, does NOT delete."""
+    q = db.query(models.VivaSprint).filter(models.VivaSprint.published.is_(True))
     if data.sprint_id:
         q = q.filter(models.VivaSprint.id == data.sprint_id)
     elif data.batch_key:
@@ -1375,19 +1375,11 @@ def clear_published_slots(
         raise HTTPException(status_code=400, detail="Provide sprint_id, batch_key, or slot_date")
     sprints = q.all()
     if not sprints:
-        raise HTTPException(status_code=404, detail="No matching sprints")
-    ids = [s.id for s in sprints]
-    batch_keys = {s.batch_key for s in sprints if s.batch_key}
-    db.query(models.VivaMemberScore).filter(models.VivaMemberScore.sprint_id.in_(ids)).delete(
-        synchronize_session=False
-    )
+        raise HTTPException(status_code=404, detail="No published sprints found to unpublish")
     for sprint in sprints:
-        db.delete(sprint)
-    db.flush()
-    for bk in batch_keys:
-        _cleanup_batch_sections(db, bk)
+        sprint.published = False
     db.commit()
-    return {"deleted_sprints": len(sprints), "sprint_ids": ids}
+    return {"unpublished_count": len(sprints), "sprint_ids": [s.id for s in sprints]}
 
 
 @router.get("/roster/matrix")

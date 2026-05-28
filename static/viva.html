@@ -126,7 +126,7 @@
         <button type="button" class="btn btn-ghost btn-sm" onclick="setAllSlots('off')">Off all</button>
         <button type="button" class="btn btn-success btn-sm" onclick="publishCurrentSprint()">Publish (all sections)</button>
         <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="deleteCurrentSprint()">Delete sprint</button>
-        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="clearPublished()">Clear all published (day/batch)</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="clearPublished()">Unpublish (day/batch)</button>
       </div>
       <div id="admin-slots" class="viva-grid"></div>
     </div>
@@ -341,11 +341,10 @@
     var body = {};
     if (batchKey) body.batch_key = batchKey;
     else if (document.getElementById('v-date').value) body.slot_date = document.getElementById('v-date').value;
-    else return toast('warning', 'Clear', 'Set batch (generate) or date first.');
-    if (activeSectionId) body.section_id = activeSectionId;
-    if (!confirm('Delete ALL published sprints/slots for this day/batch? Previous sprint history on other dates is kept.')) return;
+    else return toast('warning', 'Unpublish', 'Set batch (generate) or date first.');
+    if (!confirm('Unpublish all sprints for this day/batch? Slots remain but leads cannot select them until re-published.')) return;
     await api('/api/viva/clear-published', { method: 'POST', body: JSON.stringify(body) });
-    toast('info', 'Cleared', 'Published slots removed for selection.');
+    toast('info', 'Unpublished', 'Sprints unpublished. Leads can see them but cannot select slots.');
     await loadSprintsForSection();
     await refreshAllSheets();
   }
@@ -700,8 +699,10 @@
   async function adminToggle(slotId, status) {
     if (status === 'locked') return;
     var next = status === 'open' ? 'off' : 'open';
-    await api('/api/viva/toggle-status', { method: 'PUT', body: JSON.stringify({ slot_id: slotId, status: next }) });
-    await loadSlots();
+    try {
+      await api('/api/viva/toggle-status', { method: 'PUT', body: JSON.stringify({ slot_id: slotId, status: next }) });
+      await loadSlots();
+    } catch (e) { toast('error', 'Toggle failed', e.message); }
   }
 
   async function resetSlot(slotId) {
