@@ -426,6 +426,11 @@ def _slot_payload(
         )
         if team:
             team_name = team.name
+            # Show the booking team's actual course/section (not the viewer's)
+            team_sec_name, team_course_name = _section_meta(db, team.section_id)
+            section_name = team_sec_name
+            course_name = team_course_name
+            section_id = team.section_id
             if team.lead:
                 roster.append({"role": "Lead", "name": team.lead.name, "student_id": team.lead.student_id})
             for m in team.memberships:
