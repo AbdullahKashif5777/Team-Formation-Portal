@@ -831,8 +831,6 @@ def list_sprints(
         if not _lead_team(db, user.id, section_id):
             raise HTTPException(status_code=403, detail="Not authorized for this section")
     q = _sprints_query_for_section(db, section_id).order_by(models.VivaSprint.id.desc())
-    if user.role != "admin":
-        q = q.filter(models.VivaSprint.published.is_(True))
     sprints = q.all()
     team = _lead_team(db, user.id, section_id) if user.role != "admin" else None
     out = []
@@ -897,8 +895,7 @@ def list_slots(
         if not _lead_team(db, user.id, section_id):
             raise HTTPException(status_code=403, detail="Not authorized for this section")
 
-    published_only = user.role != "admin"
-    sprint = _resolve_sprint_for_section(db, section_id, sprint_id, published_only=published_only)
+    sprint = _resolve_sprint_for_section(db, section_id, sprint_id, published_only=False)
     if not sprint:
         return {"sprint": None, "slots": []}
 

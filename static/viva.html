@@ -24,6 +24,7 @@
     .viva-slot.off { opacity: 0.45; border-style: dashed; cursor: default; }
     .viva-slot.locked { border-color: var(--violet); background: rgba(139,92,246,0.12); cursor: default; }
     .viva-slot.lead-clickable:hover { background: rgba(16,185,129,0.12); }
+    .viva-slot.draft-slot { opacity: 0.5; border-style: dashed; cursor: default; }
     .viva-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
     .section-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
     .section-tab {
@@ -117,20 +118,19 @@
       <p class="tiny" style="margin-top:8px;">After generate: use <strong>Open all</strong>, then <strong>Publish</strong>. Delete a sprint to wipe its slots and regenerate.</p>
     </div>
 
-    <div class="section-tabs" id="section-tabs"></div>
-
     <div class="glass" style="padding:16px;margin-bottom:16px;">
-      <div class="form-label">Slot grid — <span id="active-section-label">—</span></div>
+      <div class="form-label">Slot grid — shared pool (all sections) · <span id="active-section-label">—</span></div>
       <select id="v-sprint-sel" class="form-input" style="max-width:320px;margin:8px 0" onchange="onSprintChange()"></select>
       <div class="admin-toolbar">
         <button type="button" class="btn btn-ghost btn-sm" onclick="setAllSlots('open')">Open all</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="setAllSlots('off')">Off all</button>
-        <button type="button" class="btn btn-success btn-sm" onclick="publishCurrentSprint()">Publish this sprint</button>
+        <button type="button" class="btn btn-success btn-sm" onclick="publishCurrentSprint()">Publish (all sections)</button>
         <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="deleteCurrentSprint()">Delete sprint</button>
         <button type="button" class="btn btn-ghost btn-sm" style="color:var(--rose,#f43f5e)" onclick="clearPublished()">Clear all published (day/batch)</button>
       </div>
       <div id="admin-slots" class="viva-grid"></div>
     </div>
+    <div class="section-tabs" id="section-tabs" style="display:none"></div>
 
     <div class="glass" style="padding:16px;">
       <div class="admin-sheet-tabs">
@@ -299,8 +299,13 @@
   async function publishCurrentSprint() {
     var sel = document.getElementById('v-sprint-sel');
     if (!sel || !sel.value) return;
-    await api('/api/viva/publish', { method: 'POST', body: JSON.stringify({ sprint_id: parseInt(sel.value, 10) }) });
-    toast('success', 'Published', 'Sprint published. All linked section leads notified.');
+    if (batchKey) {
+      await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
+      toast('success', 'Published', 'All sprints in this batch published for all sections.');
+    } else {
+      await api('/api/viva/publish', { method: 'POST', body: JSON.stringify({ sprint_id: parseInt(sel.value, 10) }) });
+      toast('success', 'Published', 'Sprint published. All linked section leads notified.');
+    }
     await loadSprintsForSection();
     await refreshAllSheets();
   }
@@ -514,7 +519,6 @@
   }
 
   function renderSectionTabs() {
-    var tabs = document.getElementById('section-tabs');
     if (role !== 'admin') return;
     var ids = Object.keys(sectionSprints);
     if (!ids.length) {
@@ -524,15 +528,12 @@
       });
     }
     ids = Object.keys(sectionSprints);
-    if (!ids.length) { tabs.innerHTML = ''; return; }
+    if (!ids.length) return;
     if (!activeSectionId && ids.length) activeSectionId = parseInt(ids[0], 10);
-    tabs.innerHTML = ids.map(function(sid) {
-      var m = sectionSprints[sid];
-      var label = (m.course_name ? m.course_name + ' · ' : '') + (m.section_name || ('Section ' + sid));
-      return '<button type="button" class="section-tab' + (parseInt(sid,10) === activeSectionId ? ' active' : '') + '" onclick="switchSection(' + sid + ')">' + esc(label) + '</button>';
-    }).join('');
-    document.getElementById('active-section-label').textContent = sectionSprints[activeSectionId]
-      ? (sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name) : '—';
+    var secCount = ids.length;
+    document.getElementById('active-section-label').textContent = secCount > 1
+      ? secCount + ' sections linked'
+      : (sectionSprints[activeSectionId] ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name : '—');
   }
 
   window.switchSection = function(sid) {
@@ -613,9 +614,10 @@
       else sel.value = String(list[0].id);
       if (list[0].batch_key) { batchKey = list[0].batch_key; sessionStorage.setItem('viva_batch_key', batchKey); }
     }
-    document.getElementById('viva-header-label').textContent = sectionSprints[activeSectionId]
-      ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name
-      : ('Section ' + activeSectionId);
+    var secCount = Object.keys(sectionSprints).length;
+    document.getElementById('active-section-label').textContent = secCount > 1
+      ? secCount + ' sections linked'
+      : (sectionSprints[activeSectionId] ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name : '');
     await loadSlots();
   }
 
@@ -628,10 +630,14 @@
     if (data.sprint) {
       currentSprintId = data.sprint.id;
       var hdr = (data.sprint.course_name || '') + (data.sprint.section_name ? ' · ' + data.sprint.section_name : '');
-      if (role === 'admin') document.getElementById('viva-header-label').textContent = hdr;
-      else {
+      if (role === 'admin') {
+        var secCount = Object.keys(sectionSprints).length;
+        document.getElementById('viva-header-label').textContent = secCount > 1
+          ? 'Shared Pool · ' + data.sprint.sprint_label + ' · ' + data.sprint.slot_date
+          : hdr + ' · ' + data.sprint.slot_date;
+      } else {
         document.getElementById('viva-header-label').textContent = hdr;
-        document.getElementById('lead-context').textContent = hdr + ' · ' + data.sprint.slot_date;
+        document.getElementById('lead-context').textContent = hdr + ' · ' + data.sprint.slot_date + (!data.sprint.published ? ' (upcoming)' : '');
       }
     }
     lastSlotsData = data.slots || [];
@@ -646,12 +652,15 @@
         var noteBtn = '<button class="btn btn-ghost btn-sm" style="margin-top:2px;font-size:0.65rem;position:relative;z-index:2" onclick="event.stopPropagation();event.preventDefault();setSlotNote(' + s.id + ')">📝 Note</button>';
         return '<div class="viva-slot ' + s.status + '" onclick="adminToggle(' + s.id + ',\'' + s.status + '\')">' + label + rem + sub + note + '<br>' + noteBtn + reset + '</div>';
       }
-      var clickable = s.status === 'open';
+      var isPublished = data.sprint && data.sprint.published;
+      var clickable = s.status === 'open' && isPublished;
       var mine = s.is_mine || (s.claimed_by_lead_id === userId);
       var rem = '<br><small style="color:var(--text-3)">' + esc(timeUntil(s.start_at)) + '</small>';
       var note = s.note ? '<br><small style="color:var(--accent);font-weight:500">📝 ' + esc(s.note) + '</small>' : '';
       var by = (s.status === 'locked' && !mine) ? ('<br><small>Selected by ' + esc(s.lead_name || '—') + ' · ' + esc(s.team_name || '—') + '</small>') : '';
-      return '<div class="viva-slot ' + s.status + (clickable ? ' lead-clickable' : '') + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + (mine ? '<br><small>Yours</small>' : by) + '</div>';
+      var draft = !isPublished ? '<br><small style="color:var(--text-3);font-style:italic">⏳ Not yet published</small>' : '';
+      var cls = s.status + (clickable ? ' lead-clickable' : '') + (!isPublished ? ' draft-slot' : '');
+      return '<div class="viva-slot ' + cls + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + draft + (mine ? '<br><small>Yours</small>' : by) + '</div>';
     }).join('') || '<span class="tiny">No slots</span>';
 
     if (role !== 'admin') {
@@ -680,11 +689,11 @@
     var sel = document.getElementById('v-lead-sprint');
     sel.innerHTML = list.length
       ? list.map(function(s) {
-          var dis = s.can_claim === false && !s.team_has_slot ? ' disabled' : '';
           var tag = s.team_has_slot ? ' ✓ booked' : (s.blocked_reason ? ' 🔒' : '');
-          return '<option value="' + s.id + '"' + dis + '>' + s.sprint_label + ' · ' + s.slot_date + tag + '</option>';
+          var draft = !s.published ? ' (upcoming)' : '';
+          return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + tag + draft + '</option>';
         }).join('')
-      : '<option value="">No published viva</option>';
+      : '<option value="">No viva sprints yet</option>';
     if (list.length) { sel.value = String(list[0].id); await loadSlots(); }
   }
 
