@@ -668,6 +668,11 @@ def publish_sprints_bulk(
         raise HTTPException(status_code=404, detail="No unpublished sprints found")
     for sprint in sprints:
         sprint.published = True
+    # Auto-register ALL sections into the batch so every course/section can access.
+    if data.batch_key:
+        all_sections = db.query(models.Section).all()
+        all_sids = [s.id for s in all_sections]
+        _register_batch_sections(db, data.batch_key, all_sids)
     db.commit()
     _notify_viva_published(db, sprints)
     return {"published_count": len(sprints), "sprint_ids": [s.id for s in sprints]}
@@ -683,6 +688,11 @@ def publish_sprint(
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
     sprint.published = True
+    # Auto-register ALL sections so every course/section can access this sprint.
+    if sprint.batch_key:
+        all_sections = db.query(models.Section).all()
+        all_sids = [s.id for s in all_sections]
+        _register_batch_sections(db, sprint.batch_key, all_sids)
     db.commit()
     _notify_viva_published(db, [sprint])
     return {"sprint_id": sprint.id, "published": True}
@@ -870,8 +880,7 @@ def list_slots(
         .order_by(models.VivaSlot.start_at)
         .all()
     )
-    if user.role != "admin":
-        slots = [s for s in slots if s.status != "off"]
+    # All slots shown to leads (off slots displayed as unavailable with notes)
     sec_name, course_name = _section_meta(db, section_id)
     return {
         "sprint": {

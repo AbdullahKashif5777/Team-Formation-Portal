@@ -299,12 +299,16 @@
   async function publishCurrentSprint() {
     var sel = document.getElementById('v-sprint-sel');
     if (!sel || !sel.value) return;
-    if (batchKey) {
-      await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
-      toast('success', 'Published', 'All sprints in this batch published for all sections.');
-    } else {
-      await api('/api/viva/publish', { method: 'POST', body: JSON.stringify({ sprint_id: parseInt(sel.value, 10) }) });
-      toast('success', 'Published', 'Sprint published. All linked section leads notified.');
+    try {
+      if (batchKey) {
+        await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
+      } else {
+        await api('/api/viva/publish', { method: 'POST', body: JSON.stringify({ sprint_id: parseInt(sel.value, 10) }) });
+      }
+      toast('success', 'Published ✓', 'Slots published for ALL courses & sections. Leads can now select.');
+    } catch (e) {
+      toast('error', 'Publish failed', e.message);
+      return;
     }
     await loadSprintsForSection();
     await refreshAllSheets();
@@ -563,8 +567,13 @@
 
   async function publishBulk() {
     if (!batchKey) return toast('warning', 'Batch', 'Generate a multi-section batch first.');
-    await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
-    toast('success', 'Published', 'Shared pool published. All section leads notified.');
+    try {
+      await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
+      toast('success', 'Published ✓', 'Slots published for ALL courses & sections. Leads can now select.');
+    } catch (e) {
+      toast('error', 'Publish failed', e.message);
+      return;
+    }
     await loadSprintsForSection();
     await refreshAllSheets();
   }
@@ -657,9 +666,10 @@
       var rem = '<br><small style="color:var(--text-3)">' + esc(timeUntil(s.start_at)) + '</small>';
       var note = s.note ? '<br><small style="color:var(--accent);font-weight:500">📝 ' + esc(s.note) + '</small>' : '';
       var by = (s.status === 'locked' && !mine) ? ('<br><small>Selected by ' + esc(s.lead_name || '—') + ' · ' + esc(s.team_name || '—') + '</small>') : '';
-      var draft = !isPublished ? '<br><small style="color:var(--text-3);font-style:italic">⏳ Not yet published</small>' : '';
-      var cls = s.status + (clickable ? ' lead-clickable' : '') + (!isPublished ? ' draft-slot' : '');
-      return '<div class="viva-slot ' + cls + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + draft + (mine ? '<br><small>Yours</small>' : by) + '</div>';
+      var unavail = s.status === 'off' ? '<br><small style="color:var(--rose,#f43f5e)">🚫 Unavailable</small>' : '';
+      var draft = (!isPublished && s.status !== 'off') ? '<br><small style="color:var(--text-3);font-style:italic">⏳ Not yet published</small>' : '';
+      var cls = s.status + (clickable ? ' lead-clickable' : '') + (!isPublished && s.status !== 'off' ? ' draft-slot' : '');
+      return '<div class="viva-slot ' + cls + '"' + (clickable ? ' onclick="claimSlot(' + s.id + ')"' : '') + '>' + label + rem + note + unavail + draft + (mine ? '<br><small>Yours</small>' : by) + '</div>';
     }).join('') || '<span class="tiny">No slots</span>';
 
     if (role !== 'admin') {
