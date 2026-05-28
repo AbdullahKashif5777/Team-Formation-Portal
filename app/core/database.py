@@ -261,19 +261,13 @@ def _ensure_performance_indexes() -> None:
     Composite indexes for common filter patterns (safe on Postgres + SQLite).
     Column-level indexes are declared on models; these supplement them.
     """
+    # IMPORTANT:
+    # - Do not create ORM tables here with "generic" SQL; Postgres vs SQLite differ
+    #   (e.g. INTEGER PRIMARY KEY is not auto-increment on Postgres).
+    # - Base.metadata.create_all() is the source of truth for table DDL.
     stmts = [
         "CREATE INDEX IF NOT EXISTS ix_team_memberships_member_status ON team_memberships (member_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_team_memberships_team_status ON team_memberships (team_id, status)",
-        # Shared viva slot pool membership (safe on Postgres + SQLite).
-        # Some environments may have started before this table existed; create it explicitly.
-        "CREATE TABLE IF NOT EXISTS viva_batch_sections ("
-        "id INTEGER PRIMARY KEY, "
-        "batch_key VARCHAR(36) NOT NULL, "
-        "section_id INTEGER NOT NULL"
-        ")",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uix_viva_batch_section ON viva_batch_sections (batch_key, section_id)",
-        "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_batch_key ON viva_batch_sections (batch_key)",
-        "CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_section_id ON viva_batch_sections (section_id)",
         "ALTER TABLE viva_sprints ADD COLUMN IF NOT EXISTS batch_key VARCHAR(36)",
         "CREATE INDEX IF NOT EXISTS ix_viva_sprints_batch_key ON viva_sprints (batch_key)",
         "CREATE INDEX IF NOT EXISTS ix_viva_sprints_section_date ON viva_sprints (section_id, slot_date)",
@@ -285,6 +279,16 @@ def _ensure_performance_indexes() -> None:
     with engine.begin() as conn:
         for sql in stmts:
             conn.execute(text(sql))
+
+    # Indexes for the shared-pool membership table (created via ORM metadata).
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_viva_batch_section ON viva_batch_sections (batch_key, section_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_batch_key ON viva_batch_sections (batch_key)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_viva_batch_sections_section_id ON viva_batch_sections (section_id)"))
+    except Exception:
+        # Table may not exist yet in some envs until create_all runs; that's fine.
+        return
 
 
 def create_tables() -> None:
