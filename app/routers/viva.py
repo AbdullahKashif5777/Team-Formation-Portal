@@ -339,42 +339,7 @@ def _send_viva_booking_emails(
                 sprint.day,
             )
 
-    # Notify whole section roster as well (all accepted members across teams).
-    # Additive behavior; keeps existing team-only emails.
-    try:
-        roster_members = (
-            db.query(models.TeamMembership)
-            .join(models.Team, models.Team.id == models.TeamMembership.team_id)
-            .options(joinedload(models.TeamMembership.member))
-            .filter(
-                models.Team.section_id == team.section_id,
-                models.TeamMembership.status == "accepted",
-            )
-            .all()
-        )
-    except Exception:
-        db.rollback()
-        roster_members = []
-    for rm in roster_members:
-        if not rm.member or not rm.member.email:
-            continue
-        e = rm.member.email.lower()
-        if e in seen_emails:
-            continue
-        seen_emails.add(e)
-        email_utils.send_async(
-            email_utils.send_viva_slot_booked,
-            rm.member.email,
-            rm.member.name,
-            rm.member.student_id,
-            team.name,
-            course_name,
-            section_name,
-            sprint.sprint_label,
-            date_label,
-            time_label,
-            sprint.day,
-        )
+    # Only lead + their own team members are notified (not the whole section).
 
 
 def _roster_row_from_slot(
