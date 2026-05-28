@@ -78,8 +78,8 @@
           <option value="1">Sprint 1</option><option value="2">Sprint 2</option><option value="3">Sprint 3</option>
           <option value="4">Sprint 4</option><option value="5">Sprint 5</option>
         </select>
-        <input id="v-day" class="form-input" placeholder="Day" value="Monday"/>
-        <input id="v-date" class="form-input" type="date"/>
+        <input id="v-date" class="form-input" type="date" onchange="syncDayFromDate()"/>
+        <input id="v-day" class="form-input" placeholder="Day" value="" readonly/>
         <select id="v-duration" class="form-input">
           <option value="20">20 min</option><option value="30" selected>30 min</option>
           <option value="40">40 min</option><option value="50">50 min</option>
@@ -216,6 +216,18 @@
       d.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     }
   })();
+
+  function syncDayFromDate() {
+    var d = document.getElementById('v-date');
+    var day = document.getElementById('v-day');
+    if (!d || !day) return;
+    if (!d.value) { day.value = ''; return; }
+    var dt = new Date(d.value + 'T00:00:00');
+    if (!isFinite(dt.getTime())) { day.value = ''; return; }
+    day.value = dt.toLocaleDateString([], { weekday: 'long' });
+  }
+  window.syncDayFromDate = syncDayFromDate;
+  syncDayFromDate();
 
   document.getElementById('viva-role-badge').textContent = role === 'admin' ? 'Admin' : 'Lead';
   document.getElementById('admin-panel').style.display = role === 'admin' ? '' : 'none';
@@ -519,6 +531,7 @@
     var data = await api('/api/viva/generate-bulk', { method: 'POST', body: JSON.stringify(body) });
     batchKey = data.batch_key;
     sessionStorage.setItem('viva_batch_key', batchKey);
+    syncDayFromDate();
     sectionSprints = {};
     data.sections.forEach(function(s) {
       sectionSprints[s.section_id] = { sprint_id: s.sprint_id, section_name: s.section_name, course_name: s.course_name };
@@ -533,7 +546,7 @@
   async function publishBulk() {
     if (!batchKey) return toast('warning', 'Batch', 'Generate a multi-section batch first.');
     await api('/api/viva/publish-bulk', { method: 'POST', body: JSON.stringify({ batch_key: batchKey }) });
-    toast('success', 'Published', 'All sections in this batch are live for leads.');
+    toast('success', 'Published', 'Shared pool published. All section leads notified.');
     await loadSprintsForSection();
     await refreshAllSheets();
   }
@@ -547,7 +560,7 @@
     return {
       sprint_number: n,
       sprint_label: 'Sprint ' + n,
-      day: document.getElementById('v-day').value.trim(),
+      day: (document.getElementById('v-day').value || '').trim() || (new Date(document.getElementById('v-date').value + 'T00:00:00').toLocaleDateString([], { weekday: 'long' })),
       slot_date: document.getElementById('v-date').value,
       duration_minutes: parseInt(document.getElementById('v-duration').value, 10),
       start_time: document.getElementById('v-start').value.slice(0, 5),
