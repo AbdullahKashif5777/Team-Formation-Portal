@@ -70,7 +70,7 @@ def _batch_keys_for_section(db: Session, section_id: int) -> list[str]:
             .distinct()
             .all()
         )
-        return [r[0] if isinstance(r, tuple) else r for r in rows]
+        return [r[0] for r in rows]
     except Exception:
         db.rollback()
         return []
@@ -153,7 +153,7 @@ def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) 
             db.rollback()
             rows = []
         for row in rows:
-            sid = row[0] if isinstance(row, tuple) else row.section_id
+            sid = row[0]
             team = _lead_team(db, user_id, int(sid))
             if team:
                 return team
@@ -202,7 +202,7 @@ def _section_lead_ids(db: Session, section_id: int) -> list[int]:
     )
     out: list[int] = []
     for row in teams:
-        lid = row[0] if isinstance(row, tuple) else row
+        lid = row[0]
         if lid and lid not in out:
             out.append(int(lid))
     return out
@@ -219,7 +219,7 @@ def _notify_viva_published(db: Session, sprints: list[models.VivaSprint]) -> Non
                 .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
                 .all()
             )
-            section_ids = [int(r[0] if isinstance(r, tuple) else r.section_id) for r in rows]
+            section_ids = [int(r[0]) for r in rows]
         for sid in section_ids:
             sec_name, course_name = _section_meta(db, sid)
             for lead_id in _section_lead_ids(db, sid):
