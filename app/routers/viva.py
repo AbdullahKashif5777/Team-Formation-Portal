@@ -72,6 +72,7 @@ def _batch_keys_for_section(db: Session, section_id: int) -> list[str]:
         )
         return [r[0] if isinstance(r, tuple) else r for r in rows]
     except Exception:
+        db.rollback()
         return []
 
 
@@ -87,6 +88,7 @@ def _section_in_batch(db: Session, section_id: int, batch_key: str) -> bool:
             is not None
         )
     except Exception:
+        db.rollback()
         return False
 
 
@@ -95,6 +97,7 @@ def _register_batch_sections(db: Session, batch_key: str, section_ids: list[int]
     try:
         db.query(models.VivaBatchSection).limit(1).all()
     except Exception:
+        db.rollback()
         return
     for sid in section_ids:
         exists = (
@@ -147,6 +150,7 @@ def _lead_team_for_sprint(db: Session, user_id: int, sprint: models.VivaSprint) 
                 .all()
             )
         except Exception:
+            db.rollback()
             rows = []
         for row in rows:
             sid = row[0] if isinstance(row, tuple) else row.section_id
@@ -281,6 +285,7 @@ def _cleanup_batch_sections(db: Session, batch_key: str | None) -> None:
                 synchronize_session=False
             )
         except Exception:
+            db.rollback()
             return
 
 
@@ -348,6 +353,7 @@ def _send_viva_booking_emails(
             .all()
         )
     except Exception:
+        db.rollback()
         roster_members = []
     for rm in roster_members:
         if not rm.member or not rm.member.email:
