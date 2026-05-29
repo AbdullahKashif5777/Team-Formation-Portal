@@ -86,11 +86,21 @@
     }
     .marks-section-sheet > h4 { margin: 0 0 10px; font-size: 0.92rem; color: var(--text-2); }
     .marks-block-label { margin: 10px 0 6px; font-size: 0.82rem; color: var(--text-3); font-weight: 600; }
-    .marks-section-toolbar {
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
-      margin-bottom: 10px;
+    .marks-section-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .marks-sec-tab {
+      padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-subtle);
+      background: rgba(255,255,255,0.05); cursor: pointer; font-size: 0.8rem;
     }
-    .marks-section-toolbar h4 { margin: 0; flex: 1 1 auto; }
+    .marks-sec-tab.active { background: var(--violet); border-color: var(--violet); color: #fff; }
+    .marks-sec-panel { display: none; }
+    .marks-sec-panel.active { display: block; }
+    .marks-team-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .marks-team-toolbar h4 { margin: 0; font-size: 0.9rem; color: var(--violet-light); }
+    .marks-roster-table { margin-bottom: 4px; }
+    .marks-roster-table .marks-roster-spacer td { height: 10px; border: none; padding: 0; }
     .marks-score-input { width: 64px; padding: 4px 6px; font-size: 0.82rem; }
     .marks-members-table { width: 100%; margin-top: 8px; }
     .marks-members-table th, .marks-members-table td {
@@ -182,17 +192,11 @@
       </div>
       <div id="sheet-marks" class="sheet-panel" style="max-height:420px;overflow:auto">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-          <select id="marks-sprint-filter" class="form-input" style="max-width:180px" onchange="loadMarksOverview()">
-            <option value="">All sprints (columns)</option>
-            <option value="1">Sprint 1 only</option><option value="2">Sprint 2 only</option>
-            <option value="3">Sprint 3 only</option><option value="4">Sprint 4 only</option>
-            <option value="5">Sprint 5 only</option>
-          </select>
+          <span id="marks-sprint-legend" class="tiny" style="flex:1 1 200px">Sprint columns appear when sprints are created.</span>
           <button type="button" class="btn btn-ghost btn-sm" onclick="downloadMarksCsv()">Download CSV</button>
-          <button type="button" class="btn btn-primary btn-sm" onclick="saveAllMarks('save')">Save all marks</button>
-          <button type="button" class="btn btn-success btn-sm" onclick="saveAllMarks('update')">Update all marks</button>
         </div>
-        <div id="marks-sheets-wrap"></div>
+        <div class="marks-section-tabs" id="marks-section-tabs"></div>
+        <div id="marks-section-panels"></div>
       </div>
       <div id="sheet-scores" class="sheet-panel" style="max-height:420px;overflow:auto">
         <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:10px" onclick="saveScores()">Save scores</button>
@@ -292,7 +296,7 @@
   var pendingClaimSlotId = null;
   var scoreRowsCache = [];
   var scoreTeamsCache = [];
-  var marksGridCache = { sprint_numbers: [], sprint_ids: {}, course_sheets: [] };
+  var marksGridCache = { sprint_columns: [], section_panels: [] };
 
   function rosterMembersHtml(roster) {
     return (roster || []).map(function(m) {
@@ -462,62 +466,74 @@
     return v != null && v !== '' ? String(v) : '—';
   }
 
-  function marksTeamTableHtml(team, sprintNumbers, sectionId) {
-    var cols = (sprintNumbers || []).map(function(sn) {
-      return '<th>Sprint ' + sn + '</th>';
+  function switchMarksSection(sectionId) {
+    document.querySelectorAll('.marks-sec-tab').forEach(function(btn) {
+      btn.classList.toggle('active', parseInt(btn.getAttribute('data-section-id'), 10) === sectionId);
+    });
+    document.querySelectorAll('.marks-sec-panel').forEach(function(panel) {
+      panel.classList.toggle('active', parseInt(panel.getAttribute('data-section-id'), 10) === sectionId);
+    });
+  }
+  window.switchMarksSection = switchMarksSection;
+
+  function marksRosterTableHtml(team, sprintColumns, sectionId) {
+    var cols = (sprintColumns || []).map(function(c) {
+      return '<th title="Sprint ' + c.sprint_number + '">' + esc(c.sprint_label) + '</th>';
     }).join('');
-    var rows = (team.members || []).map(function(m) {
-      var sprintCells = (sprintNumbers || []).map(function(sn) {
+    var membersById = {};
+    (team.members || []).forEach(function(m) { membersById[m.member_id] = m; });
+    var roster = team.roster || [];
+    var rows = roster.map(function(r, ri) {
+      var m = membersById[r.member_id] || {};
+      var teamCell = ri === 0 ? esc(team.display_team_name || r.team_name || team.team_name) : '';
+      var sprintCells = (sprintColumns || []).map(function(c) {
+        var sn = c.sprint_number;
         var v = sprintScoreVal(m.sprint_scores, sn);
         return '<td><input type="number" class="form-input marks-score-input" step="0.5" min="0" max="100"'
-          + ' data-section-id="' + sectionId + '"'
-          + ' data-team-id="' + team.team_id + '"'
-          + ' data-member-id="' + m.member_id + '"'
-          + ' data-sprint-num="' + sn + '"'
+          + ' data-section-id="' + sectionId + '" data-team-id="' + team.team_id + '"'
+          + ' data-member-id="' + r.member_id + '" data-sprint-num="' + sn + '"'
           + ' value="' + (v != null && v !== '' ? v : '') + '"></td>';
       }).join('');
-      return '<tr><td>' + esc(m.role) + '</td><td>' + esc(m.name) + '</td><td>' + esc(m.student_id || '') + '</td>' + sprintCells + '</tr>';
-    }).join('') || '<tr><td colspan="' + (3 + (sprintNumbers || []).length) + '" class="tiny">No members</td></tr>';
-    return '<table class="marks-members-table"><thead><tr><th>Role</th><th>Name</th><th>ID</th>' + cols + '</tr></thead><tbody>' + rows + '</tbody></table>';
+      return '<tr><td>' + teamCell + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.name) + '</td>'
+        + '<td>' + esc(r.student_id || '') + '</td><td>' + esc(r.email || '') + '</td>' + sprintCells + '</tr>';
+    }).join('') || '<tr><td colspan="' + (5 + (sprintColumns || []).length) + '" class="tiny">No members</td></tr>';
+    var colspan = 5 + (sprintColumns || []).length;
+    return '<table class="schedule-table marks-roster-table"><thead><tr><th>Team</th><th>Role</th><th>Name</th><th>Student ID</th><th>Email</th>'
+      + cols + '</tr></thead><tbody>' + rows
+      + '<tr class="marks-roster-spacer"><td colspan="' + colspan + '"></td></tr>'
+      + '<tr class="marks-roster-spacer"><td colspan="' + colspan + '"></td></tr></tbody></table>';
   }
 
-  function marksTeamSheetCardHtml(team, sprintNumbers, sectionId) {
+  function marksTeamBlockHtml(team, sprintColumns, sectionId) {
+    var tid = team.team_id;
     var bookings = (team.bookings || []).map(function(b) {
       return '<li class="tiny">' + esc(b.sprint_label || ('Sprint ' + b.sprint_number)) + ' · ' + esc(b.slot_date) + ' · ' + fmtTime(b.slot_start) + '–' + fmtTime(b.slot_end) + '</li>';
     }).join('');
-    return '<div class="team-sheet-card" data-team-id="' + team.team_id + '"><h4>' + esc(team.team_name) + ' · ' + esc(team.course_name) + ' · ' + esc(team.section_name) + '</h4>'
-      + '<p class="tiny"><strong>Lead:</strong> ' + esc(team.lead_name || '—') + '</p>'
-      + '<p class="tiny"><strong>Members</strong></p>'
-      + '<div class="tiny">' + rosterMembersHtml(team.roster) + '</div>'
-      + '<p class="tiny" style="margin-top:8px"><strong>Bookings</strong></p>'
-      + '<ul style="margin:0 0 10px;padding-left:18px">' + (bookings || '<li class="tiny">—</li>') + '</ul>'
-      + '<p class="marks-block-label">Marks (sprint columns)</p>'
-      + marksTeamTableHtml(team, sprintNumbers, sectionId) + '</div>';
+    var bookingsBlock = (team.bookings || []).length
+      ? '<p class="tiny" style="margin:6px 0"><strong>Bookings:</strong></p><ul style="margin:0 0 8px;padding-left:18px">' + bookings + '</ul>'
+      : '';
+    return '<div class="team-sheet-card marks-team-block" data-team-id="' + tid + '" data-section-id="' + sectionId + '">'
+      + '<div class="marks-team-toolbar">'
+      + '<h4>' + esc(team.display_team_name || team.team_name) + '</h4>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button type="button" class="btn btn-primary btn-sm" onclick="saveTeamMarks(' + tid + ',' + sectionId + ',\'save\')">Save marks</button>'
+      + '<button type="button" class="btn btn-success btn-sm" onclick="saveTeamMarks(' + tid + ',' + sectionId + ',\'update\')">Update marks</button>'
+      + '</div></div>'
+      + bookingsBlock
+      + marksRosterTableHtml(team, sprintColumns, sectionId)
+      + '</div>';
   }
 
-  function marksSectionSheetHtml(sec, sprintNumbers, courseId) {
-    var sid = sec.section_id;
-    var teamsHtml = (sec.teams || []).map(function(team) {
-      return marksTeamSheetCardHtml(team, sprintNumbers, sid);
-    }).join('') || '<p class="tiny">No teams in this section</p>';
-    return '<div class="marks-section-sheet" data-section-id="' + sid + '" data-course-id="' + courseId + '">'
-      + '<div class="marks-section-toolbar">'
-      + '<h4>Section · ' + esc(sec.section_name) + '</h4>'
-      + '<button type="button" class="btn btn-primary btn-sm" onclick="saveSectionMarks(' + sid + ',\'save\')">Save marks</button>'
-      + '<button type="button" class="btn btn-success btn-sm" onclick="saveSectionMarks(' + sid + ',\'update\')">Update marks</button>'
-      + '</div>' + teamsHtml + '</div>';
-  }
-
-  function collectMarksEntriesFromSection(sectionId, mode) {
+  function collectMarksEntriesFromTeam(teamId, sectionId, mode) {
     var entries = [];
-    document.querySelectorAll('.marks-section-sheet[data-section-id="' + sectionId + '"] .marks-score-input').forEach(function(inp) {
+    document.querySelectorAll('.marks-team-block[data-team-id="' + teamId + '"][data-section-id="' + sectionId + '"] .marks-score-input').forEach(function(inp) {
       var raw = inp.value.trim();
       if (mode === 'save' && raw === '') return;
       var v = raw === '' ? null : parseFloat(raw);
       if (raw !== '' && (isNaN(v) || v < 0 || v > 100)) return;
       entries.push({
         member_id: parseInt(inp.getAttribute('data-member-id'), 10),
-        team_id: parseInt(inp.getAttribute('data-team-id'), 10),
+        team_id: teamId,
         sprint_number: parseInt(inp.getAttribute('data-sprint-num'), 10),
         score: v,
         notes: null
@@ -526,136 +542,94 @@
     return entries;
   }
 
-  function marksSaveBody(sectionId, entries, mode) {
-    var body = { section_id: sectionId, mode: mode, entries: entries };
+  function marksSaveBody(sectionId, teamId, entries, mode) {
+    var body = { section_id: sectionId, team_id: teamId, mode: mode, entries: entries };
     if (batchKey) body.batch_key = batchKey;
     else if (document.getElementById('v-date').value) body.slot_date = document.getElementById('v-date').value;
     return body;
   }
 
-  async function saveSectionMarks(sectionId, mode) {
-    var entries = collectMarksEntriesFromSection(sectionId, mode);
+  async function saveTeamMarks(teamId, sectionId, mode) {
+    var entries = collectMarksEntriesFromTeam(teamId, sectionId, mode);
     if (!entries.length) {
-      toast('info', mode === 'save' ? 'Nothing to save' : 'Nothing to update', 'Enter marks in the sprint columns first.');
+      toast('info', mode === 'save' ? 'Nothing to save' : 'Nothing to update', 'Enter marks in the sprint columns for this team.');
       return;
     }
     try {
-      var res = await api('/api/viva/marks/section', {
+      var res = await api('/api/viva/marks/team', {
         method: 'PUT',
-        body: JSON.stringify(marksSaveBody(sectionId, entries, mode))
+        body: JSON.stringify(marksSaveBody(sectionId, teamId, entries, mode))
       });
-      toast('success', mode === 'save' ? 'Saved' : 'Updated', (res.saved != null ? res.saved + ' mark(s) for this section.' : 'Section marks saved.'));
+      toast('success', mode === 'save' ? 'Saved' : 'Updated', (res.saved != null ? res.saved + ' mark(s) for this team.' : 'Team marks saved.'));
       await loadMarksOverview();
+      switchMarksSection(sectionId);
     } catch (e) { toast('error', 'Failed', e.message); }
   }
-  window.saveSectionMarks = saveSectionMarks;
-
-  async function saveCourseMarks(courseId, mode) {
-    var sections = document.querySelectorAll('.marks-section-sheet[data-course-id="' + courseId + '"]');
-    if (!sections.length) return;
-    var total = 0;
-    try {
-      for (var i = 0; i < sections.length; i++) {
-        var sid = parseInt(sections[i].getAttribute('data-section-id'), 10);
-        var entries = collectMarksEntriesFromSection(sid, mode);
-        if (!entries.length) continue;
-        var res = await api('/api/viva/marks/section', {
-          method: 'PUT',
-          body: JSON.stringify(marksSaveBody(sid, entries, mode))
-        });
-        total += res.saved || 0;
-      }
-      if (!total) {
-        toast('info', mode === 'save' ? 'Nothing to save' : 'Nothing to update', 'Enter marks in this course first.');
-        return;
-      }
-      toast('success', mode === 'save' ? 'Saved' : 'Updated', total + ' mark(s) across all sections in this course.');
-      await loadMarksOverview();
-    } catch (e) { toast('error', 'Failed', e.message); }
-  }
-  window.saveCourseMarks = saveCourseMarks;
-
-  async function saveAllMarks(mode) {
-    var sections = document.querySelectorAll('.marks-section-sheet[data-section-id]');
-    if (!sections.length) {
-      toast('info', 'No sheets', 'Load marks for a batch or date first.');
-      return;
-    }
-    var total = 0;
-    try {
-      for (var i = 0; i < sections.length; i++) {
-        var sid = parseInt(sections[i].getAttribute('data-section-id'), 10);
-        var entries = collectMarksEntriesFromSection(sid, mode);
-        if (!entries.length) continue;
-        var res = await api('/api/viva/marks/section', {
-          method: 'PUT',
-          body: JSON.stringify(marksSaveBody(sid, entries, mode))
-        });
-        total += res.saved || 0;
-      }
-      if (!total) {
-        toast('info', mode === 'save' ? 'Nothing to save' : 'Nothing to update', 'Enter marks in at least one section.');
-        return;
-      }
-      toast('success', mode === 'save' ? 'Saved' : 'Updated', total + ' mark(s) across all courses and sections.');
-      await loadMarksOverview();
-    } catch (e) { toast('error', 'Failed', e.message); }
-  }
-  window.saveAllMarks = saveAllMarks;
+  window.saveTeamMarks = saveTeamMarks;
 
   async function loadMarksOverview() {
-    var wrap = document.getElementById('marks-sheets-wrap');
-    if (!wrap) return;
+    var tabsEl = document.getElementById('marks-section-tabs');
+    var panelsEl = document.getElementById('marks-section-panels');
+    var legendEl = document.getElementById('marks-sprint-legend');
+    if (!tabsEl || !panelsEl) return;
     var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
     if (!q && document.getElementById('v-date').value) q = '?slot_date=' + document.getElementById('v-date').value;
-    if (!q) { wrap.innerHTML = '<p class="tiny">Generate slots or pick a date (same as Team sheets)</p>'; return; }
-    var sn = document.getElementById('marks-sprint-filter').value;
-    if (sn) q += (q.indexOf('?') >= 0 ? '&' : '?') + 'sprint_number=' + sn;
+    if (!q) {
+      tabsEl.innerHTML = '';
+      panelsEl.innerHTML = '<p class="tiny">Generate slots or pick a date (same as Team sheets)</p>';
+      if (legendEl) legendEl.textContent = 'Sprint columns appear when sprints are created.';
+      return;
+    }
     var data = await api('/api/viva/marks/overview' + q);
-    marksGridCache = {
-      sprint_numbers: data.sprint_numbers || [],
-      sprint_ids: data.sprint_ids || {},
-      course_sheets: data.course_sheets || []
-    };
-    var sprintNumbers = marksGridCache.sprint_numbers;
-    wrap.innerHTML = (marksGridCache.course_sheets || []).map(function(course) {
-      var cid = course.course_id || 0;
-      var sectionsHtml = (course.section_sheets || []).map(function(sec) {
-        return marksSectionSheetHtml(sec, sprintNumbers, cid);
-      }).join('');
-      var courseBtns = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0">'
-        + '<button type="button" class="btn btn-primary btn-sm" onclick="saveCourseMarks(' + cid + ',\'save\')">Save all marks (course)</button>'
-        + '<button type="button" class="btn btn-success btn-sm" onclick="saveCourseMarks(' + cid + ',\'update\')">Update all marks (course)</button>'
-        + '</div>';
-      return '<div class="marks-course-sheet" data-course-id="' + cid + '"><h3>' + esc(course.course_name) + '</h3>'
-        + sectionsHtml + courseBtns + '</div>';
-    }).join('') || '<p class="tiny">No course/section records for this batch or date</p>';
+    var sprintColumns = data.sprint_columns || [];
+    var panels = data.section_panels || [];
+    marksGridCache = { sprint_columns: sprintColumns, section_panels: panels };
+    if (legendEl) {
+      legendEl.textContent = sprintColumns.length
+        ? ('Columns (one per sprint, no duplicates): ' + sprintColumns.map(function(c) { return c.sprint_label; }).join(' · '))
+        : 'No sprint columns yet — generate Sprint 1–5 slots first.';
+    }
+    if (!panels.length) {
+      tabsEl.innerHTML = '';
+      panelsEl.innerHTML = '<p class="tiny">No course/section teams for this batch or date</p>';
+      return;
+    }
+    tabsEl.innerHTML = panels.map(function(p, i) {
+      return '<button type="button" class="marks-sec-tab' + (i === 0 ? ' active' : '') + '" data-section-id="' + p.section_id + '" onclick="switchMarksSection(' + p.section_id + ')">'
+        + esc(p.course_name) + ' · ' + esc(p.section_name) + '</button>';
+    }).join('');
+    panelsEl.innerHTML = panels.map(function(p, i) {
+      var teamsHtml = (p.teams || []).map(function(t) {
+        return marksTeamBlockHtml(t, sprintColumns, p.section_id);
+      }).join('') || '<p class="tiny">No teams in this section</p>';
+      return '<div class="marks-sec-panel' + (i === 0 ? ' active' : '') + '" data-section-id="' + p.section_id + '">'
+        + '<div class="marks-section-sheet"><h3 style="margin:0 0 14px;font-size:0.95rem;color:var(--violet-light)">'
+        + esc(p.course_name) + ' · Section ' + esc(p.section_name) + '</h3>' + teamsHtml + '</div></div>';
+    }).join('');
   }
   window.loadMarksOverview = loadMarksOverview;
 
   function downloadMarksCsv() {
-    var sns = marksGridCache.sprint_numbers || [];
-    var header = ['Course', 'Section', 'Team', 'Lead', 'Role', 'Name', 'Student ID'].concat(sns.map(function(n) { return 'Sprint ' + n; }));
+    var sprintColumns = marksGridCache.sprint_columns || [];
+    var header = ['Course', 'Section', 'Team', 'Role', 'Name', 'Student ID', 'Email'].concat(
+      sprintColumns.map(function(c) { return c.sprint_label; })
+    );
     var lines = [];
-    (marksGridCache.course_sheets || []).forEach(function(course) {
-      lines.push(csvEscape('=== Course: ' + (course.course_name || '')));
-      (course.section_sheets || []).forEach(function(sec) {
-        lines.push(csvEscape('--- Section: ' + (sec.section_name || '')));
-        lines.push(header.map(csvEscape).join(','));
-        (sec.teams || []).forEach(function(team) {
-          (team.members || []).forEach(function(m) {
-            var row = [
-              course.course_name, sec.section_name, team.team_name, team.lead_name || '',
-              m.role, m.name, m.student_id || ''
-            ];
-            sns.forEach(function(sn) {
-              var v = sprintScoreVal(m.sprint_scores, sn);
-              row.push(v != null ? v : '');
-            });
-            lines.push(row.map(csvEscape).join(','));
+    (marksGridCache.section_panels || []).forEach(function(sec) {
+      lines.push(csvEscape('--- Section: ' + (sec.course_name || '') + ' · ' + (sec.section_name || '')));
+      lines.push(header.map(csvEscape).join(','));
+      (sec.teams || []).forEach(function(team) {
+        (team.members || []).forEach(function(m) {
+          var row = [
+            sec.course_name, sec.section_name, team.display_team_name || team.team_name,
+            m.role, m.name, m.student_id || '', m.email || ''
+          ];
+          sprintColumns.forEach(function(c) {
+            var v = sprintScoreVal(m.sprint_scores, c.sprint_number);
+            row.push(v != null ? v : '');
           });
+          lines.push(row.map(csvEscape).join(','));
         });
-        lines.push('');
       });
       lines.push('');
     });
