@@ -204,6 +204,7 @@
   var sectionSprints = {};
   var coursesData = [];
   var currentSprintId = null;
+  var adminSprintList = [];
 
   if (!token) location.href = '/';
   if (role !== 'admin' && role !== 'lead') location.href = '/';
@@ -309,14 +310,25 @@
   }
   window.deleteCurrentSprint = deleteCurrentSprint;
 
+  function getSelectedAdminSprint() {
+    var sel = document.getElementById('v-sprint-sel');
+    if (!sel || !sel.value) return null;
+    return adminSprintList.find(function(s) { return String(s.id) === String(sel.value); }) || null;
+  }
+
+  function adminSheetQuery() {
+    var sp = getSelectedAdminSprint();
+    if (!sp) return '';
+    var q = '?sprint_id=' + sp.id + '&slot_date=' + encodeURIComponent(sp.slot_date);
+    if (sp.batch_key) q += '&batch_key=' + encodeURIComponent(sp.batch_key);
+    return q;
+  }
+
   async function loadRosterMatrix() {
     var el = document.getElementById('roster-matrix-body');
     if (!el) return;
-    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
-    if (!q && document.getElementById('v-date').value) {
-      q = '?slot_date=' + document.getElementById('v-date').value;
-    }
-    if (!q) { el.innerHTML = '<tr><td colspan="5" class="tiny">Generate or pick a date</td></tr>'; return; }
+    var q = adminSheetQuery();
+    if (!q) { el.innerHTML = '<tr><td colspan="5" class="tiny">Select a sprint above</td></tr>'; return; }
     var data = await api('/api/viva/roster/matrix' + q);
     el.innerHTML = (data.rows || []).map(function(r) {
       return '<tr><td>' + esc(r.slot_date) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + esc(r.course_name) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + esc(r.booking_status) + '</td></tr>';
@@ -339,10 +351,8 @@
   async function loadTeamSheets() {
     var wrap = document.getElementById('team-sheets-wrap');
     if (!wrap) return;
-    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
-    if (!q && document.getElementById('v-date').value) q = '?slot_date=' + document.getElementById('v-date').value;
-    if (!q) { wrap.innerHTML = '<p class="tiny">Generate slots or pick a date</p>'; return; }
-    q += (q.indexOf('?') >= 0 ? '&' : '?') + 'sprint_number=' + sprintNum();
+    var q = adminSheetQuery();
+    if (!q) { wrap.innerHTML = '<p class="tiny">Select a sprint above</p>'; return; }
     var data = await api('/api/viva/roster/team-sheets' + q);
     wrap.innerHTML = (data.sheets || []).map(function(s) {
       var bookings = (s.bookings || []).map(function(b) {
@@ -367,9 +377,9 @@
   async function loadRosterDaily() {
     var el = document.getElementById('roster-daily-body');
     if (!el) return;
-    var date = document.getElementById('v-date').value;
-    if (!date) { el.innerHTML = '<tr><td colspan="7" class="tiny">Pick a date above</td></tr>'; return; }
-    var data = await api('/api/viva/roster/daily?slot_date=' + date);
+    var q = adminSheetQuery();
+    if (!q) { el.innerHTML = '<tr><td colspan="7" class="tiny">Select a sprint above</td></tr>'; return; }
+    var data = await api('/api/viva/roster/daily' + q);
     el.innerHTML = (data.rows || []).map(function(r) {
       return '<tr><td>' + esc(r.sprint_label) + '</td><td>' + esc(r.course_name) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + rosterMembersHtml(r.roster) + '</td></tr>';
     }).join('') || '<tr><td colspan="7" class="tiny">No bookings</td></tr>';
@@ -378,9 +388,9 @@
   async function loadRosterDailyAll() {
     var el = document.getElementById('roster-dailyall-body');
     if (!el) return;
-    var date = document.getElementById('v-date').value;
-    if (!date) { el.innerHTML = '<tr><td colspan="8" class="tiny">Pick a date above</td></tr>'; return; }
-    var data = await api('/api/viva/roster/daily-all?slot_date=' + date);
+    var q = adminSheetQuery();
+    if (!q) { el.innerHTML = '<tr><td colspan="8" class="tiny">Select a sprint above</td></tr>'; return; }
+    var data = await api('/api/viva/roster/daily-all' + q);
     el.innerHTML = (data.rows || []).map(function(r) {
       var sprint = esc(r.sprint_label || ('Sprint ' + r.sprint_number));
       var time = fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end);
@@ -391,9 +401,12 @@
   async function loadRosterLabel() {
     var el = document.getElementById('roster-label-body');
     if (!el) return;
-    if (!activeSectionId) return;
-    var label = 'Sprint ' + sprintNum();
-    var data = await api('/api/viva/roster/sprint-label?section_id=' + activeSectionId + '&sprint_label=' + encodeURIComponent(label));
+    var sp = getSelectedAdminSprint();
+    if (!sp || !activeSectionId) {
+      el.innerHTML = '<tr><td colspan="6" class="tiny">Select a sprint above</td></tr>';
+      return;
+    }
+    var data = await api('/api/viva/roster/sprint-label?section_id=' + activeSectionId + '&sprint_id=' + sp.id);
     el.innerHTML = (data.rows || []).map(function(r) {
       return '<tr><td>' + esc(r.slot_date) + '</td><td>' + esc(r.day) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + rosterMembersHtml(r.roster) + '</td></tr>';
     }).join('') || '<tr><td colspan="6" class="tiny">No bookings for this sprint name</td></tr>';
@@ -552,6 +565,7 @@
   async function loadSprintsForSection() {
     if (!activeSectionId) return;
     var list = await api('/api/viva/sprints?section_id=' + activeSectionId);
+    adminSprintList = list;
     var sel = document.getElementById('v-sprint-sel');
     sel.innerHTML = list.length
       ? list.map(function(s) { return '<option value="' + s.id + '">' + s.sprint_label + ' · ' + s.slot_date + ' (' + (s.day || '') + ')' + (s.published ? '' : ' draft') + '</option>'; }).join('')
@@ -568,9 +582,18 @@
       ? secCount + ' sections linked'
       : (sectionSprints[activeSectionId] ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name : '');
     await loadSlots();
+    await refreshAllSheets();
   }
 
-  function onSprintChange() { loadSlots(); }
+  function onSprintChange() {
+    var sp = getSelectedAdminSprint();
+    if (sp && sp.batch_key) {
+      batchKey = sp.batch_key;
+      sessionStorage.setItem('viva_batch_key', batchKey);
+    }
+    loadSlots();
+    refreshAllSheets();
+  }
 
   async function loadSlots() {
     var sel = document.getElementById(role === 'admin' ? 'v-sprint-sel' : 'v-lead-sprint');
@@ -625,10 +648,7 @@
 
   async function loadScheduleAll() {
     if (role !== 'admin') return;
-    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
-    if (!q && document.getElementById('v-date').value) {
-      q = '?slot_date=' + document.getElementById('v-date').value;
-    }
+    var q = adminSheetQuery();
     if (!q) return;
     var data = await api('/api/viva/schedule-all' + q);
     document.getElementById('schedule-all-body').innerHTML = (data.rows || []).map(function(r) {
@@ -698,7 +718,7 @@
         await loadAdminCourses();
         if (urlSectionId) activeSectionId = urlSectionId;
         if (activeSectionId) await loadSprintsForSection();
-        if (batchKey || document.getElementById('v-date').value) await refreshAllSheets();
+        else if (batchKey || document.getElementById('v-date').value) await refreshAllSheets();
       } else {
         await loadLeadSprints();
       }

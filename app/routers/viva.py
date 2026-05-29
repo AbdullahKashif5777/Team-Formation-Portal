@@ -20,6 +20,28 @@ DURATION_CHOICES = {20, 30, 40, 50, 60, 90, 120}
 SPRINT_NUMBERS = {1, 2, 3, 4, 5}
 
 
+def _assert_slot_date_available(db: Session, slot_date: dt_date) -> None:
+    """Only one viva sprint (any number, draft or published) may exist per calendar date."""
+    existing = (
+        db.query(models.VivaSprint.id)
+        .filter(models.VivaSprint.slot_date == slot_date)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A viva sprint already exists on {slot_date.isoformat()}. "
+            "Delete it first or choose another date.",
+        )
+
+
+def _sprint_by_id_or_404(db: Session, sprint_id: int) -> models.VivaSprint:
+    sprint = db.query(models.VivaSprint).filter(models.VivaSprint.id == sprint_id).first()
+    if not sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+    return sprint
+
+
 def _parse_hm(s: str) -> dt_time:
     parts = (s or "").strip().split(":")
     if len(parts) != 2:
@@ -706,6 +728,7 @@ def generate_slots(
     section = db.query(models.Section).filter(models.Section.id == data.section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
+    _assert_slot_date_available(db, data.slot_date)
 
     sn = data.sprint_number if data.sprint_number in SPRINT_NUMBERS else None
     label = data.sprint_label.strip() or (_sprint_label_for_number(sn) if sn else "")
@@ -742,6 +765,7 @@ def generate_slots_bulk(
         raise HTTPException(status_code=400, detail=f"duration_minutes must be one of {sorted(DURATION_CHOICES)}")
     if data.sprint_number not in SPRINT_NUMBERS:
         raise HTTPException(status_code=400, detail="sprint_number must be between 1 and 5")
+    _assert_slot_date_available(db, data.slot_date)
     batch_key = uuid.uuid4().hex
     label = (data.sprint_label or "").strip() or _sprint_label_for_number(data.sprint_number)
     host_section_id = data.section_ids[0]
@@ -1110,18 +1134,23 @@ def viva_schedule(
 def viva_schedule_all(
     batch_key: str | None = None,
     slot_date: dt_date | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Master viva sheet: all sections in a batch or on a given date."""
-    sprint_q = db.query(models.VivaSprint)
-    if batch_key:
-        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
-    elif slot_date:
-        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    if sprint_id:
+        sprints = [_sprint_by_id_or_404(db, sprint_id)]
+        slot_date = sprints[0].slot_date
     else:
-        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
-    sprints = sprint_q.order_by(models.VivaSprint.section_id, models.VivaSprint.id).all()
+        sprint_q = db.query(models.VivaSprint)
+        if batch_key:
+            sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+        elif slot_date:
+            sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+        else:
+            raise HTTPException(status_code=400, detail="Provide batch_key, slot_date, or sprint_id")
+        sprints = sprint_q.order_by(models.VivaSprint.section_id, models.VivaSprint.id).all()
     if not sprints:
         return {"rows": []}
 
@@ -1142,9 +1171,13 @@ def viva_schedule_all(
         for slot in slots:
             row = _roster_row_from_slot(slot, sprint, sec_name, course_name, db)
             rows.append(row)
-        # Include open/unclaimed rows for admin overview? User asked for sheet with teams - locked only is fine
     rows.sort(key=lambda r: (r["slot_date"], r["slot_start"], r["course_name"], r["section_name"]))
-    return {"rows": rows, "batch_key": batch_key, "slot_date": slot_date.isoformat() if slot_date else None}
+    return {
+        "rows": rows,
+        "batch_key": batch_key or (sprints[0].batch_key if sprints else None),
+        "slot_date": slot_date.isoformat() if slot_date else None,
+        "sprint_id": sprint_id,
+    }
 
 
 @router.get("/member-team-slot")
@@ -1282,16 +1315,24 @@ def set_slot_note(
 
 @router.get("/roster/daily")
 def roster_by_day(
-    slot_date: dt_date,
+    slot_date: dt_date | None = None,
     section_id: int | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Day sheet: all locked viva bookings on a date with full team rosters."""
-    sprint_q = db.query(models.VivaSprint).filter(models.VivaSprint.slot_date == slot_date)
-    if section_id:
-        sprint_q = sprint_q.filter(models.VivaSprint.section_id == section_id)
-    sprints = sprint_q.order_by(models.VivaSprint.section_id, models.VivaSprint.sprint_label).all()
+    if sprint_id:
+        sprint = _sprint_by_id_or_404(db, sprint_id)
+        sprints = [sprint]
+        slot_date = sprint.slot_date
+    elif slot_date:
+        sprint_q = db.query(models.VivaSprint).filter(models.VivaSprint.slot_date == slot_date)
+        if section_id:
+            sprint_q = sprint_q.filter(models.VivaSprint.section_id == section_id)
+        sprints = sprint_q.order_by(models.VivaSprint.section_id, models.VivaSprint.sprint_label).all()
+    else:
+        raise HTTPException(status_code=400, detail="Provide slot_date or sprint_id")
     rows: list[dict] = []
     for sprint in sprints:
         sec_name, course_name = _section_meta(db, sprint.section_id)
@@ -1309,17 +1350,25 @@ def roster_by_day(
 
 @router.get("/roster/daily-all")
 def roster_daily_all(
-    slot_date: dt_date,
+    slot_date: dt_date | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Day sheet (admin): every slot (Open/Off/Booked) with team + note."""
-    sprints = (
-        db.query(models.VivaSprint)
-        .filter(models.VivaSprint.slot_date == slot_date)
-        .order_by(models.VivaSprint.sprint_number, models.VivaSprint.id)
-        .all()
-    )
+    if sprint_id:
+        sprint = _sprint_by_id_or_404(db, sprint_id)
+        sprints = [sprint]
+        slot_date = sprint.slot_date
+    elif slot_date:
+        sprints = (
+            db.query(models.VivaSprint)
+            .filter(models.VivaSprint.slot_date == slot_date)
+            .order_by(models.VivaSprint.sprint_number, models.VivaSprint.id)
+            .all()
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Provide slot_date or sprint_id")
     if not sprints:
         return {"slot_date": slot_date.isoformat(), "rows": []}
     seen_shared: set[int] = set()
@@ -1368,18 +1417,26 @@ def roster_daily_all(
 @router.get("/roster/sprint-label")
 def roster_by_sprint_label(
     section_id: int,
-    sprint_label: str,
+    sprint_label: str | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Sprint label sheet: all teams who booked any day for this sprint name."""
-    label = sprint_label.strip()
-    sprints = (
-        db.query(models.VivaSprint)
-        .filter(models.VivaSprint.section_id == section_id, models.VivaSprint.sprint_label == label)
-        .order_by(models.VivaSprint.slot_date, models.VivaSprint.id)
-        .all()
-    )
+    if sprint_id:
+        sprint = _sprint_by_id_or_404(db, sprint_id)
+        sprints = [sprint]
+        label = sprint.sprint_label
+    elif sprint_label:
+        label = sprint_label.strip()
+        sprints = (
+            db.query(models.VivaSprint)
+            .filter(models.VivaSprint.section_id == section_id, models.VivaSprint.sprint_label == label)
+            .order_by(models.VivaSprint.slot_date, models.VivaSprint.id)
+            .all()
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Provide sprint_label or sprint_id")
     sec_name, course_name = _section_meta(db, section_id)
     rows: list[dict] = []
     for sprint in sprints:
@@ -1564,27 +1621,32 @@ def roster_matrix(
     batch_key: str | None = None,
     slot_date: dt_date | None = None,
     section_id: int | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Master matrix: shared pool slots once per time; booker section/course when locked."""
-    sprint_q = db.query(models.VivaSprint)
-    if batch_key:
-        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
-    elif slot_date:
-        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    if sprint_id:
+        sprints = [_sprint_by_id_or_404(db, sprint_id)]
+        slot_date = sprints[0].slot_date
     else:
-        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
-    if section_id:
-        sprint_q = sprint_q.filter(
-            or_(
-                models.VivaSprint.section_id == section_id,
-                models.VivaSprint.batch_key.in_(_batch_keys_for_section(db, section_id)),
+        sprint_q = db.query(models.VivaSprint)
+        if batch_key:
+            sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+        elif slot_date:
+            sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+        else:
+            raise HTTPException(status_code=400, detail="Provide batch_key, slot_date, or sprint_id")
+        if section_id:
+            sprint_q = sprint_q.filter(
+                or_(
+                    models.VivaSprint.section_id == section_id,
+                    models.VivaSprint.batch_key.in_(_batch_keys_for_section(db, section_id)),
+                )
             )
-        )
-    sprints = sprint_q.order_by(
-        models.VivaSprint.slot_date, models.VivaSprint.sprint_number, models.VivaSprint.id
-    ).all()
+        sprints = sprint_q.order_by(
+            models.VivaSprint.slot_date, models.VivaSprint.sprint_number, models.VivaSprint.id
+        ).all()
     seen_shared: set[int] = set()
     rows: list[dict] = []
     for sprint in sprints:
@@ -1622,7 +1684,12 @@ def roster_matrix(
                     "booking_status": p["booking_status"],
                 }
             )
-    return {"rows": rows, "batch_key": batch_key, "slot_date": slot_date.isoformat() if slot_date else None}
+    return {
+        "rows": rows,
+        "batch_key": batch_key or (sprints[0].batch_key if sprints else None),
+        "slot_date": slot_date.isoformat() if slot_date else None,
+        "sprint_id": sprint_id,
+    }
 
 
 @router.get("/roster/team-sheets")
@@ -1630,22 +1697,28 @@ def roster_team_sheets(
     batch_key: str | None = None,
     slot_date: dt_date | None = None,
     sprint_number: int | None = None,
+    sprint_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """One card per booked team with course, section, members, and sprint bookings."""
-    sprint_q = db.query(models.VivaSprint)
-    if batch_key:
-        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
-    elif slot_date:
-        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    if sprint_id:
+        sprint = _sprint_by_id_or_404(db, sprint_id)
+        sprints = [sprint]
+        slot_date = sprint.slot_date
     else:
-        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
-    if sprint_number is not None:
-        if sprint_number not in SPRINT_NUMBERS:
-            raise HTTPException(status_code=400, detail="sprint_number must be 1–5")
-        sprint_q = sprint_q.filter(models.VivaSprint.sprint_number == sprint_number)
-    sprints = sprint_q.order_by(models.VivaSprint.sprint_number, models.VivaSprint.id).all()
+        sprint_q = db.query(models.VivaSprint)
+        if batch_key:
+            sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+        elif slot_date:
+            sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+        else:
+            raise HTTPException(status_code=400, detail="Provide batch_key, slot_date, or sprint_id")
+        if sprint_number is not None:
+            if sprint_number not in SPRINT_NUMBERS:
+                raise HTTPException(status_code=400, detail="sprint_number must be 1–5")
+            sprint_q = sprint_q.filter(models.VivaSprint.sprint_number == sprint_number)
+        sprints = sprint_q.order_by(models.VivaSprint.sprint_number, models.VivaSprint.id).all()
     seen_shared: set[int] = set()
     teams_map: dict[int, dict] = {}
     for sprint in sprints:
