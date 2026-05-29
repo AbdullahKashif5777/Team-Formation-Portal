@@ -75,6 +75,16 @@
       margin-bottom: 12px; background: rgba(255,255,255,0.03);
     }
     .team-sheet-card h4 { margin: 0 0 8px; font-size: 0.9rem; color: var(--violet-light); }
+    .marks-sprint-heading {
+      margin: 16px 0 10px; font-size: 0.95rem; color: var(--violet-light); font-weight: 700;
+      border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;
+    }
+    .marks-sprint-heading:first-child { margin-top: 0; }
+    .marks-members-table { width: 100%; margin-top: 8px; }
+    .marks-members-table th, .marks-members-table td {
+      padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-size: 0.82rem; text-align: left;
+    }
+    .marks-members-table th { color: var(--text-3); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -164,12 +174,12 @@
           <option value="1">Sprint 1</option><option value="2">Sprint 2</option>
           <option value="3">Sprint 3</option><option value="4">Sprint 4</option><option value="5">Sprint 5</option>
         </select>
-        <table class="schedule-table">
-          <thead><tr><th>Sprint</th><th>Course</th><th>Section</th><th>Team</th><th>Role</th><th>Name</th><th>ID</th><th>Slot</th><th>Score</th><th>Notes</th></tr></thead>
-          <tbody id="marks-overview-body"></tbody>
-        </table>
+        <div id="marks-sheets-wrap"></div>
       </div>
-      <div id="sheet-scores" class="sheet-panel"><button type="button" class="btn btn-primary btn-sm" style="margin-bottom:10px" onclick="saveScores()">Save scores</button><table class="schedule-table"><thead><tr><th>Team</th><th>Role</th><th>Name</th><th>ID</th><th>Slot</th><th>Score</th><th>Notes</th></tr></thead><tbody id="scores-body"></tbody></table></div>
+      <div id="sheet-scores" class="sheet-panel" style="max-height:420px;overflow:auto">
+        <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:10px" onclick="saveScores()">Save scores</button>
+        <div id="scores-teams-wrap"></div>
+      </div>
     </div>
   </div>
 
@@ -263,6 +273,7 @@
   var lastSlotsData = [];
   var pendingClaimSlotId = null;
   var scoreRowsCache = [];
+  var scoreTeamsCache = [];
 
   function rosterMembersHtml(roster) {
     return (roster || []).map(function(m) {
@@ -373,15 +384,67 @@
     }).join('') || '<p class="tiny">No team bookings yet</p>';
   }
 
+  function marksMemberRowsHtml(members, editable, sprintIdx, teamIdx) {
+    return (members || []).map(function(m, mi) {
+      var scoreCell = editable
+        ? '<input class="form-input score-input" type="number" step="0.5" min="0" max="100" data-sprint-idx="' + sprintIdx + '" data-team-idx="' + teamIdx + '" data-member-idx="' + mi + '" value="' + (m.score != null ? m.score : '') + '">'
+        : '<td>' + (m.score != null ? m.score : '—') + '</td>';
+      var notesCell = editable
+        ? '<input class="form-input" type="text" data-note-sprint-idx="' + sprintIdx + '" data-note-team-idx="' + teamIdx + '" data-note-member-idx="' + mi + '" value="' + esc(m.notes || '') + '">'
+        : esc(m.notes || '—');
+      if (editable) {
+        return '<tr><td>' + esc(m.role) + '</td><td>' + esc(m.name) + '</td><td>' + esc(m.student_id || '') + '</td><td>' + scoreCell + '</td><td>' + notesCell + '</td></tr>';
+      }
+      return '<tr><td>' + esc(m.role) + '</td><td>' + esc(m.name) + '</td><td>' + esc(m.student_id || '') + '</td>' + scoreCell + '<td>' + notesCell + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="tiny">No members</td></tr>';
+  }
+
+  function marksTeamCardHtml(team, editable, sprintIdx, teamIdx) {
+    var slotLine = team.slot_start
+      ? '<p class="tiny"><strong>Slot:</strong> ' + fmtTime(team.slot_start) + (team.slot_end ? '–' + fmtTime(team.slot_end) : '') + (team.slot_date ? ' · ' + esc(team.slot_date) : '') + '</p>'
+      : '';
+    var table = '<table class="marks-members-table"><thead><tr><th>Role</th><th>Name</th><th>ID</th><th>Score</th><th>Notes</th></tr></thead><tbody>'
+      + marksMemberRowsHtml(team.members, editable, sprintIdx, teamIdx) + '</tbody></table>';
+    return '<div class="team-sheet-card"><h4>' + esc(team.team_name) + ' · ' + esc(team.course_name) + ' · ' + esc(team.section_name) + '</h4>'
+      + '<p class="tiny"><strong>Lead:</strong> ' + esc(team.lead_name || '—') + '</p>'
+      + slotLine + table + '</div>';
+  }
+
+  function flattenScoreRowsFromTeams(teams) {
+    var rows = [];
+    (teams || []).forEach(function(t) {
+      (t.members || []).forEach(function(m) {
+        rows.push({
+          member_id: m.member_id,
+          team_id: t.team_id,
+          team_name: t.team_name,
+          course_name: t.course_name,
+          section_name: t.section_name,
+          role: m.role,
+          name: m.name,
+          student_id: m.student_id,
+          score: m.score,
+          notes: m.notes,
+          slot_start: t.slot_start
+        });
+      });
+    });
+    return rows;
+  }
+
   async function loadMarksOverview() {
-    var el = document.getElementById('marks-overview-body');
-    if (!el) return;
+    var wrap = document.getElementById('marks-sheets-wrap');
+    if (!wrap) return;
     var sn = document.getElementById('marks-sprint-filter').value;
     var q = sn ? ('?sprint_number=' + sn) : '';
     var data = await api('/api/viva/marks/overview' + q);
-    el.innerHTML = (data.rows || []).map(function(r) {
-      return '<tr><td>' + esc(r.sprint_label || r.sprint_number) + '</td><td>' + esc(r.course_name) + '</td><td>' + esc(r.section_name) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.student_id) + '</td><td>' + fmtTime(r.slot_start) + '</td><td>' + (r.score != null ? r.score : '') + '</td><td>' + esc(r.notes || '') + '</td></tr>';
-    }).join('') || '<tr><td colspan="10" class="tiny">No rows</td></tr>';
+    var sprints = data.sprints || [];
+    wrap.innerHTML = sprints.map(function(sp, si) {
+      var teamsHtml = (sp.teams || []).map(function(t, ti) {
+        return marksTeamCardHtml(t, false, si, ti);
+      }).join('') || '<p class="tiny">No booked teams</p>';
+      return '<div class="marks-sprint-block"><div class="marks-sprint-heading">' + esc(sp.sprint_label || ('Sprint ' + sp.sprint_number)) + '</div>' + teamsHtml + '</div>';
+    }).join('') || '<p class="tiny">No marks yet</p>';
   }
   window.loadMarksOverview = loadMarksOverview;
 
@@ -432,28 +495,33 @@
   }
 
   async function loadScores() {
-    var el = document.getElementById('scores-body');
-    if (!el) return;
+    var wrap = document.getElementById('scores-teams-wrap');
+    if (!wrap) return;
     var sel = document.getElementById('v-sprint-sel');
     if (!sel || !sel.value) return;
     var data = await api('/api/viva/scores?sprint_id=' + sel.value);
-    scoreRowsCache = data.rows || [];
-    el.innerHTML = scoreRowsCache.map(function(r, i) {
-      return '<tr><td>' + esc(r.team_name) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.student_id) + '</td><td>' + fmtTime(r.slot_start) + '</td><td><input class="form-input score-input" type="number" step="0.5" min="0" max="100" data-idx="' + i + '" value="' + (r.score != null ? r.score : '') + '"></td><td><input class="form-input" type="text" data-note-idx="' + i + '" value="' + esc(r.notes || '') + '"></td></tr>';
-    }).join('') || '<tr><td colspan="7" class="tiny">No locked teams yet</td></tr>';
+    scoreTeamsCache = data.teams || [];
+    scoreRowsCache = flattenScoreRowsFromTeams(scoreTeamsCache);
+    wrap.innerHTML = scoreTeamsCache.map(function(t, ti) {
+      return marksTeamCardHtml(t, true, 0, ti);
+    }).join('') || '<p class="tiny">No locked teams yet</p>';
   }
 
   async function saveScores() {
     var sel = document.getElementById('v-sprint-sel');
     if (!sel || !sel.value) return;
-    var scores = scoreRowsCache.map(function(r, i) {
-      var inp = document.querySelector('input.score-input[data-idx="' + i + '"]');
-      var note = document.querySelector('input[data-note-idx="' + i + '"]');
-      var v = inp && inp.value !== '' ? parseFloat(inp.value) : null;
-      return { member_id: r.member_id, score: v, notes: note ? note.value : null };
+    var scores = [];
+    scoreTeamsCache.forEach(function(t, ti) {
+      (t.members || []).forEach(function(m, mi) {
+        var inp = document.querySelector('input.score-input[data-sprint-idx="0"][data-team-idx="' + ti + '"][data-member-idx="' + mi + '"]');
+        var note = document.querySelector('input[data-note-sprint-idx="0"][data-note-team-idx="' + ti + '"][data-note-member-idx="' + mi + '"]');
+        var v = inp && inp.value !== '' ? parseFloat(inp.value) : null;
+        scores.push({ member_id: m.member_id, score: v, notes: note ? note.value : null });
+      });
     });
     await api('/api/viva/scores', { method: 'PUT', body: JSON.stringify({ sprint_id: parseInt(sel.value, 10), scores: scores }) });
     toast('success', 'Saved', 'Scores updated.');
+    await loadScores();
   }
   window.saveScores = saveScores;
 
