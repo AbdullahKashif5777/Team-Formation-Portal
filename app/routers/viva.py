@@ -658,6 +658,22 @@ class VivaScoresSaveRequest(BaseModel):
     scores: list[VivaScoreUpdate]
 
 
+class VivaMarksSectionEntry(BaseModel):
+    member_id: int
+    team_id: int
+    sprint_number: int
+    score: float | None = None
+    notes: str | None = None
+
+
+class VivaMarksSectionSaveRequest(BaseModel):
+    section_id: int
+    batch_key: str | None = None
+    slot_date: dt_date | None = None
+    mode: str = "save"  # save: non-empty only; update: all entries including clears
+    entries: list[VivaMarksSectionEntry]
+
+
 class VivaClearPublishedRequest(BaseModel):
     batch_key: str | None = None
     slot_date: dt_date | None = None
@@ -1704,6 +1720,41 @@ def _empty_sprint_scores(sprint_numbers: list[int]) -> tuple[dict, dict]:
     return scores, notes
 
 
+def _sprint_ids_by_number(sprints: list[models.VivaSprint]) -> dict[str, int]:
+    """Map sprint_number -> sprint_id for the loaded batch/day (shared pool: one row per number)."""
+    out: dict[str, int] = {}
+    seen_shared: set[int] = set()
+    for sprint in sorted(sprints, key=lambda s: (s.sprint_number or 0, s.id)):
+        if sprint.is_shared_pool and sprint.id in seen_shared:
+            continue
+        if sprint.is_shared_pool:
+            seen_shared.add(sprint.id)
+        if sprint.sprint_number:
+            out[str(sprint.sprint_number)] = sprint.id
+    return out
+
+
+def _sprints_for_marks_scope(
+    db: Session,
+    *,
+    batch_key: str | None = None,
+    slot_date: dt_date | None = None,
+    sprint_number: int | None = None,
+) -> list[models.VivaSprint]:
+    sprint_q = db.query(models.VivaSprint)
+    if batch_key:
+        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+    elif slot_date:
+        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
+    else:
+        return []
+    if sprint_number is not None:
+        sprint_q = sprint_q.filter(models.VivaSprint.sprint_number == sprint_number)
+    return sprint_q.order_by(
+        models.VivaSprint.sprint_number, models.VivaSprint.slot_date.desc(), models.VivaSprint.id.desc()
+    ).all()
+
+
 def _section_ids_for_sprints(db: Session, sprints: list[models.VivaSprint]) -> set[int]:
     section_ids: set[int] = set()
     seen_shared: set[int] = set()
@@ -1889,6 +1940,8 @@ def _build_marks_grid(db: Session, sprints: list[models.VivaSprint]) -> tuple[li
             {
                 "section_id": sid,
                 "section_name": team_data.get("section_name") or "",
+                "course_id": cid,
+                "course_name": team_data.get("course_name") or "",
                 "teams": [],
             },
         )
@@ -1930,28 +1983,105 @@ def marks_overview(
     batch_key: str | None = None,
     slot_date: dt_date | None = None,
     sprint_number: int | None = None,
+    section_id: int | None = None,
+    course_id: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Course/section roster sheets with sprint mark columns (same layout as Team sheets)."""
-    sprint_q = db.query(models.VivaSprint)
-    if batch_key:
-        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
-    elif slot_date:
-        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
-    if sprint_number is not None:
-        if sprint_number not in SPRINT_NUMBERS:
-            raise HTTPException(status_code=400, detail="sprint_number must be 1–5")
-        sprint_q = sprint_q.filter(models.VivaSprint.sprint_number == sprint_number)
-    sprints = sprint_q.order_by(
-        models.VivaSprint.sprint_number, models.VivaSprint.slot_date.desc(), models.VivaSprint.id.desc()
-    ).all()
+    if sprint_number is not None and sprint_number not in SPRINT_NUMBERS:
+        raise HTTPException(status_code=400, detail="sprint_number must be 1–5")
+    sprints = _sprints_for_marks_scope(db, batch_key=batch_key, slot_date=slot_date, sprint_number=sprint_number)
     if not sprints and not (batch_key or slot_date):
         sprints = db.query(models.VivaSprint).order_by(models.VivaSprint.sprint_number).all()
     sprint_numbers, course_sheets = _build_marks_grid(db, sprints)
+    if section_id is not None:
+        course_sheets = [
+            {
+                **c,
+                "section_sheets": [s for s in c.get("section_sheets", []) if s.get("section_id") == section_id],
+            }
+            for c in course_sheets
+            if any(s.get("section_id") == section_id for s in c.get("section_sheets", []))
+        ]
+    if course_id is not None:
+        course_sheets = [c for c in course_sheets if c.get("course_id") == course_id]
     return {
         "sprint_numbers": sprint_numbers,
+        "sprint_ids": _sprint_ids_by_number(sprints),
         "course_sheets": course_sheets,
         "batch_key": batch_key,
         "slot_date": slot_date.isoformat() if slot_date else None,
     }
+
+
+@router.put("/marks/section")
+def save_section_marks(
+    data: VivaMarksSectionSaveRequest,
+    admin: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Save or update marks for all teams in one section (all sprint columns)."""
+    if data.mode not in ("save", "update"):
+        raise HTTPException(status_code=400, detail="mode must be save or update")
+    if not data.batch_key and not data.slot_date:
+        raise HTTPException(status_code=400, detail="Provide batch_key or slot_date")
+    sprints = _sprints_for_marks_scope(db, batch_key=data.batch_key, slot_date=data.slot_date)
+    sprint_by_number = {s.sprint_number: s for s in sprints if s.sprint_number}
+    if not sprint_by_number:
+        raise HTTPException(status_code=404, detail="No sprints found for this batch or date")
+
+    section = db.query(models.Section).filter(models.Section.id == data.section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    updated = 0
+    for entry in data.entries:
+        if entry.sprint_number not in sprint_by_number:
+            continue
+        if data.mode == "save" and entry.score is None:
+            continue
+        sprint = sprint_by_number[entry.sprint_number]
+        team = (
+            db.query(models.Team)
+            .filter(models.Team.id == entry.team_id, models.Team.section_id == data.section_id)
+            .first()
+        )
+        if not team:
+            continue
+        on_team = team.lead_id == entry.member_id or (
+            db.query(models.TeamMembership)
+            .filter(
+                models.TeamMembership.team_id == team.id,
+                models.TeamMembership.member_id == entry.member_id,
+                models.TeamMembership.status == "accepted",
+            )
+            .first()
+            is not None
+        )
+        if not on_team:
+            continue
+        rec = (
+            db.query(models.VivaMemberScore)
+            .filter(
+                models.VivaMemberScore.sprint_id == sprint.id,
+                models.VivaMemberScore.member_id == entry.member_id,
+            )
+            .first()
+        )
+        if not rec:
+            rec = models.VivaMemberScore(
+                sprint_id=sprint.id,
+                team_id=team.id,
+                member_id=entry.member_id,
+            )
+            db.add(rec)
+        else:
+            rec.team_id = team.id
+        rec.score = entry.score
+        if entry.notes is not None:
+            rec.notes = (entry.notes or "").strip() or None
+        rec.updated_by_id = admin.id
+        updated += 1
+    db.commit()
+    return {"saved": updated, "section_id": data.section_id, "mode": data.mode}
