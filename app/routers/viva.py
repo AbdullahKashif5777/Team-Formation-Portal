@@ -1686,11 +1686,101 @@ def roster_team_sheets(
     return {"sheets": sheets, "sprint_numbers": sprint_numbers}
 
 
+def _team_roster_payload(team: models.Team) -> list[dict]:
+    roster: list[dict] = []
+    if team.lead:
+        roster.append({"role": "Lead", "name": team.lead.name, "student_id": team.lead.student_id})
+    for m in team.memberships or []:
+        if m.status == "accepted" and m.member:
+            roster.append(
+                {"role": "Member", "name": m.member.name, "student_id": m.member.student_id}
+            )
+    return roster
+
+
+def _empty_sprint_scores(sprint_numbers: list[int]) -> tuple[dict, dict]:
+    scores = {str(sn): None for sn in sprint_numbers}
+    notes = {str(sn): None for sn in sprint_numbers}
+    return scores, notes
+
+
+def _section_ids_for_sprints(db: Session, sprints: list[models.VivaSprint]) -> set[int]:
+    section_ids: set[int] = set()
+    seen_shared: set[int] = set()
+    for sprint in sprints:
+        if sprint.is_shared_pool and sprint.batch_key:
+            if sprint.id in seen_shared:
+                continue
+            seen_shared.add(sprint.id)
+            try:
+                rows = (
+                    db.query(models.VivaBatchSection.section_id)
+                    .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
+                    .all()
+                )
+                section_ids.update(int(r[0]) for r in rows)
+            except Exception:
+                db.rollback()
+        else:
+            section_ids.add(sprint.section_id)
+    return section_ids
+
+
 def _build_marks_grid(db: Session, sprints: list[models.VivaSprint]) -> tuple[list[int], list[dict]]:
-    """Pivot marks by course → section → team with sprint columns (1–5)."""
+    """Roster/team-sheets layout: course → section sheets, all teams, sprint mark columns."""
     sprint_numbers = sorted({s.sprint_number for s in sprints if s.sprint_number})
-    # team_id -> {meta, members: {member_id -> {info, sprint_scores: {sn: score}}}}
-    grid_teams: dict[int, dict] = {}
+    if not sprint_numbers:
+        sprint_numbers = sorted(SPRINT_NUMBERS)
+
+    section_ids = _section_ids_for_sprints(db, sprints)
+    teams_by_id: dict[int, dict] = {}
+
+    for sid in sorted(section_ids):
+        sec_name, course_name = _section_meta(db, sid)
+        section = (
+            db.query(models.Section)
+            .options(joinedload(models.Section.course))
+            .filter(models.Section.id == sid)
+            .first()
+        )
+        course_id = section.course_id if section else None
+        teams = (
+            db.query(models.Team)
+            .options(
+                joinedload(models.Team.lead),
+                joinedload(models.Team.memberships).joinedload(models.TeamMembership.member),
+            )
+            .filter(models.Team.section_id == sid)
+            .order_by(models.Team.name)
+            .all()
+        )
+        for team in teams:
+            sprint_scores, sprint_notes = _empty_sprint_scores(sprint_numbers)
+            members: list[dict] = []
+            for role, person in _team_roster_people(team):
+                members.append(
+                    {
+                        "member_id": person.id,
+                        "role": role,
+                        "name": person.name,
+                        "student_id": person.student_id,
+                        "sprint_scores": dict(sprint_scores),
+                        "sprint_notes": dict(sprint_notes),
+                    }
+                )
+            teams_by_id[team.id] = {
+                "team_id": team.id,
+                "team_name": team.name,
+                "lead_name": team.lead.name if team.lead else None,
+                "course_id": course_id,
+                "course_name": course_name,
+                "section_id": sid,
+                "section_name": sec_name,
+                "roster": _team_roster_payload(team),
+                "bookings": [],
+                "members": members,
+            }
+
     seen_shared: set[int] = set()
     for sprint in sprints:
         if sprint.is_shared_pool and sprint.id in seen_shared:
@@ -1717,79 +1807,138 @@ def _build_marks_grid(db: Session, sprints: list[models.VivaSprint]) -> tuple[li
             team = _load_team_for_slot(db, slot.team_id)
             if not team:
                 continue
-            sec_name, course_name = _section_meta(db, team.section_id)
-            if slot.team_id not in grid_teams:
-                grid_teams[slot.team_id] = {
+            if slot.team_id not in teams_by_id:
+                sec_name, course_name = _section_meta(db, team.section_id)
+                section = (
+                    db.query(models.Section)
+                    .options(joinedload(models.Section.course))
+                    .filter(models.Section.id == team.section_id)
+                    .first()
+                )
+                sprint_scores, sprint_notes = _empty_sprint_scores(sprint_numbers)
+                members = []
+                for role, person in _team_roster_people(team):
+                    members.append(
+                        {
+                            "member_id": person.id,
+                            "role": role,
+                            "name": person.name,
+                            "student_id": person.student_id,
+                            "sprint_scores": dict(sprint_scores),
+                            "sprint_notes": dict(sprint_notes),
+                        }
+                    )
+                teams_by_id[slot.team_id] = {
                     "team_id": team.id,
                     "team_name": team.name,
                     "lead_name": team.lead.name if team.lead else None,
+                    "course_id": section.course_id if section else None,
                     "course_name": course_name,
+                    "section_id": team.section_id,
                     "section_name": sec_name,
-                    "slot_start": slot.start_at.isoformat(),
-                    "members_by_id": {},
+                    "roster": _team_roster_payload(team),
+                    "bookings": [],
+                    "members": members,
                 }
-            entry = grid_teams[slot.team_id]
-            if slot.start_at.isoformat() < (entry.get("slot_start") or "z"):
-                entry["slot_start"] = slot.start_at.isoformat()
+            entry = teams_by_id[slot.team_id]
+            entry["bookings"].append(
+                {
+                    "sprint_label": sprint.sprint_label,
+                    "sprint_number": sn,
+                    "slot_date": sprint.slot_date.isoformat(),
+                    "day": sprint.day,
+                    "slot_start": slot.start_at.isoformat(),
+                    "slot_end": slot.end_at.isoformat(),
+                }
+            )
+            members_by_id = {m["member_id"]: m for m in entry["members"]}
             for role, person in _team_roster_people(team):
-                mid = person.id
-                if mid not in entry["members_by_id"]:
-                    entry["members_by_id"][mid] = {
-                        "member_id": mid,
+                if person.id not in members_by_id:
+                    sc, nt = _empty_sprint_scores(sprint_numbers)
+                    members_by_id[person.id] = {
+                        "member_id": person.id,
+                        "role": role,
                         "name": person.name,
                         "student_id": person.student_id,
-                        "role": role,
-                        "sprint_scores": {},
-                        "sprint_notes": {},
+                        "sprint_scores": sc,
+                        "sprint_notes": nt,
                     }
-                rec = saved.get(mid)
-                entry["members_by_id"][mid]["sprint_scores"][str(sn)] = rec.score if rec else None
-                entry["members_by_id"][mid]["sprint_notes"][str(sn)] = rec.notes if rec else None
+                rec = saved.get(person.id)
+                members_by_id[person.id]["sprint_scores"][str(sn)] = rec.score if rec else None
+                members_by_id[person.id]["sprint_notes"][str(sn)] = rec.notes if rec else None
+            entry["members"] = sorted(
+                members_by_id.values(),
+                key=lambda m: (0 if m["role"] == "Lead" else 1, m["name"] or ""),
+            )
 
-    courses_map: dict[str, dict] = {}
-    for team_data in sorted(grid_teams.values(), key=_team_marks_sort_key):
-        members = sorted(
-            team_data["members_by_id"].values(),
-            key=lambda m: (0 if m["role"] == "Lead" else 1, m["name"] or ""),
+    courses_map: dict[int, dict] = {}
+    for team_data in sorted(
+        teams_by_id.values(),
+        key=lambda t: (t.get("course_name") or "", t.get("section_name") or "", t.get("team_name") or ""),
+    ):
+        cid = team_data.get("course_id") or 0
+        sid = team_data.get("section_id") or 0
+        if cid not in courses_map:
+            courses_map[cid] = {
+                "course_id": cid,
+                "course_name": team_data.get("course_name") or "",
+                "section_sheets": {},
+            }
+        courses_map[cid]["section_sheets"].setdefault(
+            sid,
+            {
+                "section_id": sid,
+                "section_name": team_data.get("section_name") or "",
+                "teams": [],
+            },
         )
-        for m in members:
-            for sn in sprint_numbers:
-                m["sprint_scores"].setdefault(str(sn), None)
-                m["sprint_notes"].setdefault(str(sn), None)
-        team_out = {
-            "team_id": team_data["team_id"],
-            "team_name": team_data["team_name"],
-            "lead_name": team_data["lead_name"],
-            "slot_start": team_data.get("slot_start"),
-            "members": members,
-        }
-        cname = team_data["course_name"] or ""
-        sname = team_data["section_name"] or ""
-        courses_map.setdefault(cname, {"course_name": cname, "sections": {}})
-        courses_map[cname]["sections"].setdefault(sname, {"section_name": sname, "teams": []})
-        courses_map[cname]["sections"][sname]["teams"].append(team_out)
+        courses_map[cid]["section_sheets"][sid]["teams"].append(
+            {
+                "team_id": team_data["team_id"],
+                "team_name": team_data["team_name"],
+                "lead_name": team_data["lead_name"],
+                "course_name": team_data["course_name"],
+                "section_name": team_data["section_name"],
+                "roster": team_data["roster"],
+                "bookings": sorted(
+                    team_data["bookings"],
+                    key=lambda b: (b.get("sprint_number") or 0, b.get("slot_start") or ""),
+                ),
+                "members": team_data["members"],
+            }
+        )
 
-    courses_out: list[dict] = []
-    for cname in sorted(courses_map.keys()):
-        c = courses_map[cname]
-        sections_out = []
-        for sname in sorted(c["sections"].keys()):
-            sec = c["sections"][sname]
-            sec["teams"] = sorted(sec["teams"], key=lambda t: (t.get("slot_start") or "", t.get("team_name") or ""))
-            sections_out.append(sec)
-        courses_out.append({"course_name": cname, "sections": sections_out})
+    course_sheets: list[dict] = []
+    for cid in sorted(courses_map.keys(), key=lambda i: courses_map[i]["course_name"]):
+        c = courses_map[cid]
+        section_sheets = []
+        for sid in sorted(c["section_sheets"].keys(), key=lambda i: c["section_sheets"][i]["section_name"]):
+            section_sheets.append(c["section_sheets"][sid])
+        course_sheets.append(
+            {
+                "course_id": c["course_id"],
+                "course_name": c["course_name"],
+                "section_sheets": section_sheets,
+            }
+        )
     db.commit()
-    return sprint_numbers, courses_out
+    return sprint_numbers, course_sheets
 
 
 @router.get("/marks/overview")
 def marks_overview(
+    batch_key: str | None = None,
+    slot_date: dt_date | None = None,
     sprint_number: int | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Course/team marks grid with sprint columns; auto-seeds score rows for booked teams."""
+    """Course/section roster sheets with sprint mark columns (same layout as Team sheets)."""
     sprint_q = db.query(models.VivaSprint)
+    if batch_key:
+        sprint_q = sprint_q.filter(models.VivaSprint.batch_key == batch_key)
+    elif slot_date:
+        sprint_q = sprint_q.filter(models.VivaSprint.slot_date == slot_date)
     if sprint_number is not None:
         if sprint_number not in SPRINT_NUMBERS:
             raise HTTPException(status_code=400, detail="sprint_number must be 1–5")
@@ -1797,5 +1946,12 @@ def marks_overview(
     sprints = sprint_q.order_by(
         models.VivaSprint.sprint_number, models.VivaSprint.slot_date.desc(), models.VivaSprint.id.desc()
     ).all()
-    sprint_numbers, courses = _build_marks_grid(db, sprints)
-    return {"sprint_numbers": sprint_numbers, "courses": courses}
+    if not sprints and not (batch_key or slot_date):
+        sprints = db.query(models.VivaSprint).order_by(models.VivaSprint.sprint_number).all()
+    sprint_numbers, course_sheets = _build_marks_grid(db, sprints)
+    return {
+        "sprint_numbers": sprint_numbers,
+        "course_sheets": course_sheets,
+        "batch_key": batch_key,
+        "slot_date": slot_date.isoformat() if slot_date else None,
+    }

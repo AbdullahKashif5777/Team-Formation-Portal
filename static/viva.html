@@ -75,11 +75,17 @@
       margin-bottom: 12px; background: rgba(255,255,255,0.03);
     }
     .team-sheet-card h4 { margin: 0 0 8px; font-size: 0.9rem; color: var(--violet-light); }
-    .marks-sprint-heading {
-      margin: 16px 0 10px; font-size: 0.95rem; color: var(--violet-light); font-weight: 700;
-      border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;
+    .marks-course-sheet {
+      border: 1px solid var(--border-subtle); border-radius: 14px; padding: 14px 16px;
+      margin-bottom: 18px; background: rgba(255,255,255,0.02);
     }
-    .marks-sprint-heading:first-child { margin-top: 0; }
+    .marks-course-sheet > h3 { margin: 0 0 12px; font-size: 1rem; color: var(--violet-light); }
+    .marks-section-sheet {
+      border: 1px solid rgba(139,92,246,0.25); border-radius: 12px; padding: 12px 14px;
+      margin-bottom: 14px; background: rgba(139,92,246,0.06);
+    }
+    .marks-section-sheet > h4 { margin: 0 0 10px; font-size: 0.92rem; color: var(--text-2); }
+    .marks-block-label { margin: 10px 0 6px; font-size: 0.82rem; color: var(--text-3); font-weight: 600; }
     .marks-members-table { width: 100%; margin-top: 8px; }
     .marks-members-table th, .marks-members-table td {
       padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-size: 0.82rem; text-align: left;
@@ -278,7 +284,7 @@
   var pendingClaimSlotId = null;
   var scoreRowsCache = [];
   var scoreTeamsCache = [];
-  var marksGridCache = { sprint_numbers: [], courses: [] };
+  var marksGridCache = { sprint_numbers: [], course_sheets: [] };
 
   function rosterMembersHtml(roster) {
     return (roster || []).map(function(m) {
@@ -461,34 +467,55 @@
     return '<table class="marks-members-table"><thead><tr><th>Role</th><th>Name</th><th>ID</th>' + cols + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
+  function marksTeamSheetCardHtml(team, sprintNumbers) {
+    var bookings = (team.bookings || []).map(function(b) {
+      return '<li class="tiny">' + esc(b.sprint_label || ('Sprint ' + b.sprint_number)) + ' · ' + esc(b.slot_date) + ' · ' + fmtTime(b.slot_start) + '–' + fmtTime(b.slot_end) + '</li>';
+    }).join('');
+    return '<div class="team-sheet-card"><h4>' + esc(team.team_name) + ' · ' + esc(team.course_name) + ' · ' + esc(team.section_name) + '</h4>'
+      + '<p class="tiny"><strong>Lead:</strong> ' + esc(team.lead_name || '—') + '</p>'
+      + '<p class="tiny"><strong>Members</strong></p>'
+      + '<div class="tiny">' + rosterMembersHtml(team.roster) + '</div>'
+      + '<p class="tiny" style="margin-top:8px"><strong>Bookings</strong></p>'
+      + '<ul style="margin:0 0 10px;padding-left:18px">' + (bookings || '<li class="tiny">—</li>') + '</ul>'
+      + '<p class="marks-block-label">Marks (sprint columns)</p>'
+      + marksTeamTableHtml(team, sprintNumbers) + '</div>';
+  }
+
   async function loadMarksOverview() {
     var wrap = document.getElementById('marks-sheets-wrap');
     if (!wrap) return;
+    var q = batchKey ? ('?batch_key=' + encodeURIComponent(batchKey)) : '';
+    if (!q && document.getElementById('v-date').value) q = '?slot_date=' + document.getElementById('v-date').value;
+    if (!q) { wrap.innerHTML = '<p class="tiny">Generate slots or pick a date (same as Team sheets)</p>'; return; }
     var sn = document.getElementById('marks-sprint-filter').value;
-    var q = sn ? ('?sprint_number=' + sn) : '';
+    if (sn) q += (q.indexOf('?') >= 0 ? '&' : '?') + 'sprint_number=' + sn;
     var data = await api('/api/viva/marks/overview' + q);
-    marksGridCache = { sprint_numbers: data.sprint_numbers || [], courses: data.courses || [] };
+    marksGridCache = {
+      sprint_numbers: data.sprint_numbers || [],
+      course_sheets: data.course_sheets || []
+    };
     var sprintNumbers = marksGridCache.sprint_numbers;
-    wrap.innerHTML = (marksGridCache.courses || []).map(function(course) {
-      var sectionsHtml = (course.sections || []).map(function(sec) {
+    wrap.innerHTML = (marksGridCache.course_sheets || []).map(function(course) {
+      var sectionsHtml = (course.section_sheets || []).map(function(sec) {
         var teamsHtml = (sec.teams || []).map(function(team) {
-          return '<div class="team-sheet-card"><h4>' + esc(team.team_name) + ' · ' + esc(course.course_name) + ' · ' + esc(sec.section_name) + '</h4>'
-            + '<p class="tiny"><strong>Lead:</strong> ' + esc(team.lead_name || '—') + '</p>'
-            + marksTeamTableHtml(team, sprintNumbers) + '</div>';
-        }).join('') || '<p class="tiny">No teams</p>';
-        return '<div class="marks-sprint-heading">' + esc(sec.section_name) + '</div>' + teamsHtml;
+          return marksTeamSheetCardHtml(team, sprintNumbers);
+        }).join('') || '<p class="tiny">No teams in this section</p>';
+        return '<div class="marks-section-sheet"><h4>Section · ' + esc(sec.section_name) + '</h4>' + teamsHtml + '</div>';
       }).join('');
-      return '<div class="marks-sprint-block"><div class="marks-sprint-heading" style="font-size:1.05rem">' + esc(course.course_name) + '</div>' + sectionsHtml + '</div>';
-    }).join('') || '<p class="tiny">No marks yet — book slots first</p>';
+      return '<div class="marks-course-sheet"><h3>' + esc(course.course_name) + '</h3>' + sectionsHtml + '</div>';
+    }).join('') || '<p class="tiny">No course/section records for this batch or date</p>';
   }
   window.loadMarksOverview = loadMarksOverview;
 
   function downloadMarksCsv() {
     var sns = marksGridCache.sprint_numbers || [];
     var header = ['Course', 'Section', 'Team', 'Lead', 'Role', 'Name', 'Student ID'].concat(sns.map(function(n) { return 'Sprint ' + n; }));
-    var lines = [header.map(csvEscape).join(',')];
-    (marksGridCache.courses || []).forEach(function(course) {
-      (course.sections || []).forEach(function(sec) {
+    var lines = [];
+    (marksGridCache.course_sheets || []).forEach(function(course) {
+      lines.push(csvEscape('=== Course: ' + (course.course_name || '')));
+      (course.section_sheets || []).forEach(function(sec) {
+        lines.push(csvEscape('--- Section: ' + (sec.section_name || '')));
+        lines.push(header.map(csvEscape).join(','));
         (sec.teams || []).forEach(function(team) {
           (team.members || []).forEach(function(m) {
             var row = [
@@ -502,13 +529,15 @@
             lines.push(row.map(csvEscape).join(','));
           });
         });
+        lines.push('');
       });
+      lines.push('');
     });
-    if (lines.length < 2) { toast('info', 'Nothing to export', 'No marks data loaded.'); return; }
+    if (lines.length < 2) { toast('info', 'Nothing to export', 'Load marks for a batch or date first.'); return; }
     var blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'viva-marks.csv';
+    a.download = 'viva-marks-by-course-section.csv';
     a.click();
     URL.revokeObjectURL(a.href);
   }
