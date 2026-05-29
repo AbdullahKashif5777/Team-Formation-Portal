@@ -234,6 +234,19 @@
   document.getElementById('admin-panel').style.display = role === 'admin' ? '' : 'none';
   document.getElementById('lead-panel').style.display = role === 'admin' ? 'none' : '';
 
+  function apiErrorDetail(data) {
+    if (typeof data.detail === 'string') return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(function(d) {
+        if (typeof d === 'string') return d;
+        if (d && d.msg) return d.msg;
+        return JSON.stringify(d);
+      }).join('; ');
+    }
+    if (data.detail && typeof data.detail === 'object' && data.detail.msg) return data.detail.msg;
+    return 'Request failed';
+  }
+
   async function api(path, opts) {
     opts = opts || {};
     var res = await fetch(window.__portalApiUrl(path), {
@@ -242,7 +255,7 @@
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
     });
     var data = await res.json().catch(function() { return {}; });
-    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Request failed');
+    if (!res.ok) throw new Error(apiErrorDetail(data));
     return data;
   }
 
@@ -402,11 +415,11 @@
     var el = document.getElementById('roster-label-body');
     if (!el) return;
     var sp = getSelectedAdminSprint();
-    if (!sp || !activeSectionId) {
+    if (!sp) {
       el.innerHTML = '<tr><td colspan="6" class="tiny">Select a sprint above</td></tr>';
       return;
     }
-    var data = await api('/api/viva/roster/sprint-label?section_id=' + activeSectionId + '&sprint_id=' + sp.id);
+    var data = await api('/api/viva/roster/sprint-label?sprint_id=' + sp.id);
     el.innerHTML = (data.rows || []).map(function(r) {
       return '<tr><td>' + esc(r.slot_date) + '</td><td>' + esc(r.day) + '</td><td>' + esc(r.team_name) + '</td><td>' + esc(r.lead_name) + '</td><td>' + fmtTime(r.slot_start) + '–' + fmtTime(r.slot_end) + '</td><td>' + rosterMembersHtml(r.roster) + '</td></tr>';
     }).join('') || '<tr><td colspan="6" class="tiny">No bookings for this sprint name</td></tr>';
@@ -504,19 +517,23 @@
     if (!ids.length) return toast('warning', 'Sections', 'Select at least one section.');
     var body = buildFormBody();
     body.section_ids = ids;
-    var data = await api('/api/viva/generate-bulk', { method: 'POST', body: JSON.stringify(body) });
-    batchKey = data.batch_key;
-    sessionStorage.setItem('viva_batch_key', batchKey);
-    syncDayFromDate();
-    sectionSprints = {};
-    data.sections.forEach(function(s) {
-      sectionSprints[s.section_id] = { sprint_id: s.sprint_id, section_name: s.section_name, course_name: s.course_name };
-    });
-    activeSectionId = data.sections[0].section_id;
-    toast('success', 'Generated', 'Shared pool for ' + data.sections.length + ' section(s) · Sprint ' + data.sprint_number + '.');
-    renderSectionTabs();
-    await loadSprintsForSection();
-    await refreshAllSheets();
+    try {
+      var data = await api('/api/viva/generate-bulk', { method: 'POST', body: JSON.stringify(body) });
+      batchKey = data.batch_key;
+      sessionStorage.setItem('viva_batch_key', batchKey);
+      syncDayFromDate();
+      sectionSprints = {};
+      data.sections.forEach(function(s) {
+        sectionSprints[s.section_id] = { sprint_id: s.sprint_id, section_name: s.section_name, course_name: s.course_name };
+      });
+      activeSectionId = data.sections[0].section_id;
+      toast('success', 'Generated', 'Shared pool for ' + data.sections.length + ' section(s) · Sprint ' + data.sprint_number + '.');
+      renderSectionTabs();
+      await loadSprintsForSection();
+      await refreshAllSheets();
+    } catch (e) {
+      toast('error', 'Generate failed', e.message);
+    }
   }
 
   async function publishBulk() {
@@ -554,12 +571,16 @@
     var body = buildFormBody();
     body.section_id = activeSectionId;
     if (!body.slot_date) return toast('error', 'Date', 'Pick a date.');
-    var data = await api('/api/viva/generate', { method: 'POST', body: JSON.stringify(body) });
-    sectionSprints[activeSectionId] = sectionSprints[activeSectionId] || {};
-    sectionSprints[activeSectionId].sprint_id = data.sprint_id;
-    if (data.batch_key) { batchKey = data.batch_key; sessionStorage.setItem('viva_batch_key', batchKey); }
-    toast('success', 'Generated', data.slot_count + ' slots.');
-    await loadSprintsForSection();
+    try {
+      var data = await api('/api/viva/generate', { method: 'POST', body: JSON.stringify(body) });
+      sectionSprints[activeSectionId] = sectionSprints[activeSectionId] || {};
+      sectionSprints[activeSectionId].sprint_id = data.sprint_id;
+      if (data.batch_key) { batchKey = data.batch_key; sessionStorage.setItem('viva_batch_key', batchKey); }
+      toast('success', 'Generated', data.slot_count + ' slots.');
+      await loadSprintsForSection();
+    } catch (e) {
+      toast('error', 'Generate failed', e.message);
+    }
   }
 
   async function loadSprintsForSection() {
@@ -578,9 +599,15 @@
       if (list[0].batch_key) { batchKey = list[0].batch_key; sessionStorage.setItem('viva_batch_key', batchKey); }
     }
     var secCount = Object.keys(sectionSprints).length;
-    document.getElementById('active-section-label').textContent = secCount > 1
-      ? secCount + ' sections linked'
-      : (sectionSprints[activeSectionId] ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name : '');
+    var spSel = getSelectedAdminSprint();
+    if (spSel && spSel.is_shared_pool) {
+      document.getElementById('active-section-label').textContent =
+        secCount > 1 ? secCount + ' sections · shared pool' : 'All sections · shared pool';
+    } else {
+      document.getElementById('active-section-label').textContent = secCount > 1
+        ? secCount + ' sections linked'
+        : (sectionSprints[activeSectionId] ? sectionSprints[activeSectionId].course_name + ' · ' + sectionSprints[activeSectionId].section_name : '');
+    }
     await loadSlots();
     await refreshAllSheets();
   }
@@ -604,9 +631,16 @@
       var hdr = (data.sprint.course_name || '') + (data.sprint.section_name ? ' · ' + data.sprint.section_name : '');
       if (role === 'admin') {
         var secCount = Object.keys(sectionSprints).length;
-        document.getElementById('viva-header-label').textContent = secCount > 1
-          ? 'Shared Pool · ' + data.sprint.sprint_label + ' · ' + data.sprint.slot_date
-          : hdr + ' · ' + data.sprint.slot_date;
+        if (data.sprint.is_shared_pool) {
+          document.getElementById('viva-header-label').textContent =
+            'Shared Pool · ' + data.sprint.sprint_label + ' · ' + data.sprint.slot_date;
+          document.getElementById('active-section-label').textContent =
+            secCount > 1 ? secCount + ' sections · shared pool' : 'All sections · shared pool';
+        } else {
+          document.getElementById('viva-header-label').textContent = secCount > 1
+            ? 'Shared Pool · ' + data.sprint.sprint_label + ' · ' + data.sprint.slot_date
+            : hdr + ' · ' + data.sprint.slot_date;
+        }
       } else {
         document.getElementById('viva-header-label').textContent = hdr;
         document.getElementById('lead-context').textContent = hdr + ' · ' + data.sprint.slot_date + (!data.sprint.published ? ' (upcoming)' : '');

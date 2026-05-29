@@ -42,6 +42,34 @@ def _sprint_by_id_or_404(db: Session, sprint_id: int) -> models.VivaSprint:
     return sprint
 
 
+def _batch_section_ids(db: Session, sprint: models.VivaSprint) -> list[int]:
+    if sprint.is_shared_pool and sprint.batch_key:
+        rows = (
+            db.query(models.VivaBatchSection.section_id)
+            .filter(models.VivaBatchSection.batch_key == sprint.batch_key)
+            .all()
+        )
+        ids = [int(r[0]) for r in rows]
+        if ids:
+            return ids
+    return [sprint.section_id]
+
+
+def _slot_section_display(
+    db: Session, sprint: models.VivaSprint, slot: models.VivaSlot
+) -> tuple[int, str, str]:
+    """Section/course labels for roster rows (booked team wins; shared pool open slots are generic)."""
+    if slot.team_id:
+        team = db.query(models.Team).filter(models.Team.id == slot.team_id).first()
+        if team:
+            sec_name, course_name = _section_meta(db, team.section_id)
+            return team.section_id, sec_name, course_name
+    if sprint.is_shared_pool:
+        return 0, "Shared pool", "All courses"
+    sec_name, course_name = _section_meta(db, sprint.section_id)
+    return sprint.section_id, sec_name, course_name
+
+
 def _parse_hm(s: str) -> dt_time:
     parts = (s or "").strip().split(":")
     if len(parts) != 2:
@@ -1071,7 +1099,10 @@ def list_slots(
         .all()
     )
     # All slots shown to leads (off slots displayed as unavailable with notes)
-    sec_name, course_name = _section_meta(db, section_id)
+    if sprint.is_shared_pool:
+        sec_name, course_name = "Shared pool", "All courses"
+    else:
+        sec_name, course_name = _section_meta(db, section_id)
     return {
         "sprint": {
             "id": sprint.id,
@@ -1385,14 +1416,8 @@ def roster_daily_all(
             .all()
         )
         for slot in slots:
-            sec_name, course_name = _section_meta(db, sprint.section_id)
-            sid = sprint.section_id
-            if slot.team_id:
-                team = db.query(models.Team).filter(models.Team.id == slot.team_id).first()
-                if team:
-                    sec_name, course_name = _section_meta(db, team.section_id)
-                    sid = team.section_id
-            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sid)
+            sid, sec_name, course_name = _slot_section_display(db, sprint, slot)
+            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sid or None)
             rows.append(
                 {
                     "slot_date": slot_date.isoformat(),
@@ -1416,18 +1441,18 @@ def roster_daily_all(
 
 @router.get("/roster/sprint-label")
 def roster_by_sprint_label(
-    section_id: int,
-    sprint_label: str | None = None,
     sprint_id: int | None = None,
+    section_id: int | None = None,
+    sprint_label: str | None = None,
     _: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Sprint label sheet: all teams who booked any day for this sprint name."""
+    """Sprint label sheet: all teams who booked for this sprint (shared pool = all batch sections)."""
     if sprint_id:
         sprint = _sprint_by_id_or_404(db, sprint_id)
         sprints = [sprint]
         label = sprint.sprint_label
-    elif sprint_label:
+    elif section_id and sprint_label:
         label = sprint_label.strip()
         sprints = (
             db.query(models.VivaSprint)
@@ -1436,8 +1461,7 @@ def roster_by_sprint_label(
             .all()
         )
     else:
-        raise HTTPException(status_code=400, detail="Provide sprint_label or sprint_id")
-    sec_name, course_name = _section_meta(db, section_id)
+        raise HTTPException(status_code=400, detail="Provide sprint_id or section_id with sprint_label")
     rows: list[dict] = []
     for sprint in sprints:
         slots = (
@@ -1447,8 +1471,15 @@ def roster_by_sprint_label(
             .all()
         )
         for slot in slots:
+            sec_name, course_name = _section_meta(db, sprint.section_id)
             rows.append(_roster_row_from_slot(slot, sprint, sec_name, course_name, db))
-    return {"section_id": section_id, "sprint_label": label, "rows": rows}
+    rows.sort(key=lambda r: (r["course_name"], r["section_name"], r["slot_start"]))
+    return {
+        "section_id": section_id,
+        "sprint_label": label,
+        "sprint_id": sprint_id,
+        "rows": rows,
+    }
 
 
 @router.get("/scores")
@@ -1661,14 +1692,8 @@ def roster_matrix(
             .all()
         )
         for slot in slots:
-            sec_name, course_name = _section_meta(db, sprint.section_id)
-            sid = sprint.section_id
-            if slot.team_id:
-                team = db.query(models.Team).filter(models.Team.id == slot.team_id).first()
-                if team:
-                    sec_name, course_name = _section_meta(db, team.section_id)
-                    sid = team.section_id
-            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sid)
+            sid, sec_name, course_name = _slot_section_display(db, sprint, slot)
+            p = _slot_payload(slot, db, section_name=sec_name, course_name=course_name, section_id=sid or None)
             rows.append(
                 {
                     "slot_date": sprint.slot_date.isoformat(),
@@ -1726,6 +1751,38 @@ def roster_team_sheets(
             continue
         if sprint.is_shared_pool:
             seen_shared.add(sprint.id)
+        if sprint.is_shared_pool:
+            for sid in _batch_section_ids(db, sprint):
+                for team in (
+                    db.query(models.Team)
+                    .options(
+                        joinedload(models.Team.lead),
+                        joinedload(models.Team.memberships).joinedload(models.TeamMembership.member),
+                    )
+                    .filter(models.Team.section_id == sid)
+                    .all()
+                ):
+                    if team.id in teams_map:
+                        continue
+                    sec_name, course_name = _section_meta(db, team.section_id)
+                    roster = []
+                    if team.lead:
+                        roster.append({"role": "Lead", "name": team.lead.name, "student_id": team.lead.student_id})
+                    for m in team.memberships:
+                        if m.status == "accepted" and m.member:
+                            roster.append(
+                                {"role": "Member", "name": m.member.name, "student_id": m.member.student_id}
+                            )
+                    teams_map[team.id] = {
+                        "team_id": team.id,
+                        "team_name": team.name,
+                        "lead_name": team.lead.name if team.lead else None,
+                        "course_name": course_name,
+                        "section_name": sec_name,
+                        "section_id": team.section_id,
+                        "roster": roster,
+                        "bookings": [],
+                    }
         slots = (
             db.query(models.VivaSlot)
             .filter(
