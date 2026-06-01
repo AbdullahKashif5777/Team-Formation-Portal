@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app import models
 from app.auth import get_current_user
@@ -22,7 +22,18 @@ def get_roster_sheet_v2(
 
     Additive endpoint: does not modify existing roster endpoints.
     """
-    section = db.query(models.Section).filter(models.Section.id == section_id).first()
+    section = (
+        db.query(models.Section)
+        .options(
+            joinedload(models.Section.course),
+            selectinload(models.Section.teams).joinedload(models.Team.lead),
+            selectinload(models.Section.teams)
+            .selectinload(models.Team.memberships)
+            .joinedload(models.TeamMembership.member),
+        )
+        .filter(models.Section.id == section_id)
+        .first()
+    )
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 

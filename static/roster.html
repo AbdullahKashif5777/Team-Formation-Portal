@@ -353,86 +353,9 @@
   let rosterData = null;
   let rosterWS = null;
 
-  // ── Load ─────────────────────────────────────────────────────────────────
-  async function loadRoster() {
-    // Use roster-sheet payload (role-gated server-side); keeps UI consistent across admin/lead/member.
-    try {
-      const res = await fetch(API + `/api/roster/sheet/${sectionId}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.status === 401) { location.href = '/'; return; }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Load failed');
-      rosterData = data;
-      renderSheet(data);
-    } catch (e) { toast('error', 'Load Failed', e.message); }
-  }
+  // Load/render: jspreadsheet implementation in the second script block (window.loadRoster).
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  function renderSheet(data) {
-    document.title = `Roster · ${data.section_name} · ${data.course_name}`;
-    document.getElementById('toolbar-title').textContent = `${data.course_name} — Section ${data.section_name}`;
-    document.getElementById('toolbar-sub').textContent = `${data.roster.length} records`;
-
-    // Group by team, preserving order
-    const teamMap = new Map();
-    data.roster.forEach(r => {
-      if (!teamMap.has(r.team_name)) teamMap.set(r.team_name, []);
-      teamMap.get(r.team_name).push(r);
-    });
-
-    const teamColors = ['t1','t2','t3','t4','t1','t2','t3','t4'];
-    let html = ''; let rowNum = 0; let tIdx = 0;
-    const canEditLead = role === 'admin';
-    const limit = parseInt(data.team_size_limit || '0') || null;
-
-    teamMap.forEach((members, teamName) => {
-      const memberCount = members.filter(m => m.role === 'Member').length;
-      const peopleCount = members.length; // includes Lead row
-      const lead = members.find(m => m.role === 'Lead');
-      const tc = teamColors[tIdx % teamColors.length]; tIdx++;
-      const isFull = limit ? (peopleCount >= limit) : false;
-
-      html += `<tr class="team-group-row ${tc}">
-        <td colspan="7">
-          ▶ ${esc(teamName)}
-          <span class="team-group-meta">· ${limit ? `${peopleCount}/${limit} people${isFull ? ' · Full' : ''}` : `${peopleCount} people`} · ${memberCount} members${lead ? ' · Lead: ' + esc(lead.name) : ''}</span>
-        </td></tr>`;
-
-      members.forEach(r => {
-        rowNum++;
-        const isLead = r.role === 'Lead';
-        const editName = canEditLead || !isLead;
-        const editSid  = !isLead;
-
-        html += `<tr class="${isLead ? 'lead-row' : 'member-row'}" data-uid="${r.user_id}">
-          <td class="td-num">${rowNum}</td>
-          <td><span class="role-badge ${isLead ? 'role-lead' : 'role-member'}">${r.role}</span></td>
-          <td>${editName
-            ? `<div contenteditable="true" data-field="name" data-uid="${r.user_id}" data-orig="${esc(r.name||'')}"
-                 onkeydown="cellKey(event,this)" onfocus="cellFocus(this)" onblur="cellBlur(this)">${esc(r.name||'')}</div>`
-            : `<div class="non-edit">${esc(r.name||'')}</div>`}</td>
-          <td>${editSid
-            ? `<div contenteditable="true" data-field="student_id" data-uid="${r.user_id}" data-orig="${esc(r.student_id||'')}"
-                 onkeydown="cellKey(event,this)" onfocus="cellFocus(this)" onblur="cellBlur(this)" style="font-family:'JetBrains Mono',monospace;font-size:.83rem">${esc(r.student_id||'')}</div>`
-            : `<div class="non-edit">—</div>`}</td>
-          <td style="font-size:.82rem;color:var(--text-3)">${esc(r.email||'')}</td>
-          <td style="font-size:.8rem;color:var(--text-3)">${esc(teamName)}</td>
-          <td><span class="status-pill ${isLead ? 'status-active' : 'status-accepted'}">${r.status}</span></td>
-        </tr>`;
-      });
-    });
-
-    if (!html) html = `<tr><td colspan="7" class="sheet-empty">No members enrolled in this section yet.</td></tr>`;
-    document.getElementById('sheet-body').innerHTML = html;
-
-    // Info bar
-    const ib = document.getElementById('info-bar'); ib.style.display = 'flex';
-    document.getElementById('info-course').textContent  = `📘 ${data.course_name}`;
-    document.getElementById('info-section').textContent = `📍 Section ${data.section_name}`;
-    document.getElementById('info-count').textContent   = `👥 ${data.roster.length} members`;
-    document.getElementById('info-teams').textContent   = `🏆 ${teamMap.size} teams`;
-  }
-
-  // ── Cell editing ──────────────────────────────────────────────────────────
+  // ── Cell editing (legacy table; kept for compatibility) ───────────────────
   function cellFocus(el) { el.dataset.orig = el.innerText.trim(); }
 
   function cellKey(e, el) {
@@ -539,7 +462,10 @@
   function exportPDF() { window.print(); }
 
   // ── Refresh ───────────────────────────────────────────────────────────────
-  function refreshRoster() { loadRoster(); toast('info', 'Refreshed', 'Roster data reloaded.'); }
+  function refreshRoster() {
+    if (typeof window.loadRoster === 'function') window.loadRoster();
+    toast('info', 'Refreshed', 'Roster data reloaded.');
+  }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
   function esc(s) {
@@ -571,13 +497,6 @@
     if (b) b.textContent = next === 'dark' ? 'Light' : 'Dark';
   }
 
-  // ── Init ──────────────────────────────────────────────────────────────────
-  window.onload = () => {
-    loadRoster();
-    connectRosterWS();
-    setInterval(loadRoster, 120000); // Fallback refresh; WS already triggers reloads
-  };
-
   function decodeJwtSub(tok) {
     try {
       const part = tok.split('.')[1];
@@ -607,7 +526,7 @@
           const event = msg.event;
           // Any team membership changes should reflect immediately in roster sheet.
           if (event === 'team_updated' || event === 'admin_team_activity' || event === 'removed_from_team' || event === 'request_accepted' || event === 'request_cancelled') {
-            loadRoster();
+            if (typeof window.loadRoster === 'function') window.loadRoster();
           }
         } catch (_) {}
       };
@@ -778,23 +697,36 @@
     } catch (_) {}
   }
 
-  // Override existing loadRoster to use roster-sheet payload
+  function apiErrorDetail(data) {
+    if (typeof data.detail === 'string') return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(function(d) {
+        if (typeof d === 'string') return d;
+        if (d && d.msg) return d.msg;
+        return JSON.stringify(d);
+      }).join('; ');
+    }
+    return 'Load failed';
+  }
+
   window.loadRoster = async function loadRosterSheet() {
     try {
       const res = await fetch(API + rosterSheetEndpoint(), { headers: { Authorization: `Bearer ${token}` } });
       if (res.status === 401) { location.href = '/'; return; }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Load failed');
+      if (!res.ok) throw new Error(apiErrorDetail(data));
       rosterData = data;
       window.renderSheet(data);
-    } catch (e) { toast('error', 'Load Failed', e.message); }
+    } catch (e) { toast('error', 'Load Failed', e.message || String(e)); }
   };
 
   // Override existing renderSheet to render Jspreadsheet
   window.renderSheet = function renderRosterSpreadsheet(data) {
     document.title = `Roster · ${data.section_name} · ${data.course_name}`;
-    document.getElementById('toolbar-title').textContent = `${data.course_name} — Section ${data.section_name}`;
-    document.getElementById('toolbar-sub').textContent = `${(data.roster || []).length} records`;
+    const titleEl = document.getElementById('toolbar-title');
+    const subEl = document.getElementById('toolbar-sub');
+    if (titleEl) titleEl.textContent = `${data.course_name} — Section ${data.section_name}`;
+    if (subEl) subEl.textContent = `${(data.roster || []).length} records`;
 
     const ib = document.getElementById('info-bar'); ib.style.display = 'flex';
     // Member view is strictly read-only.
@@ -865,6 +797,14 @@
     });
 
     const wrap = document.getElementById('roster-sheet');
+    if (!wrap) {
+      toast('error', 'Load Failed', 'Roster container not found on page.');
+      return;
+    }
+    if (typeof jspreadsheet !== 'function') {
+      toast('error', 'Load Failed', 'Spreadsheet library did not load. Check your connection and refresh.');
+      return;
+    }
     wrap.innerHTML = '';
     rosterSheet = jspreadsheet(wrap, {
       data: rows,
@@ -996,7 +936,7 @@
       cell.classList.remove('changed');
       setSaveDot('ok');
       if (d.refresh) {
-        setTimeout(() => loadRoster(), 50);
+        setTimeout(() => { if (typeof window.loadRoster === 'function') window.loadRoster(); }, 50);
       }
     } catch (e) {
       setSaveDot('err');
@@ -1121,7 +1061,7 @@
       const d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Failed');
       toast('success', 'Column Added', `"${title}" added.`);
-      await loadRoster(); // full re-render
+      if (typeof window.loadRoster === 'function') await window.loadRoster(); // full re-render
     } catch (e) {
       toast('error', 'Add Failed', e.message);
     }
@@ -1152,7 +1092,7 @@
       const d = await res.json();
       if (!res.ok) throw new Error(d.detail || 'Failed');
       toast('success', 'Column Removed', `"${removed.title || removed.key}" removed.`);
-      await loadRoster(); // full re-render
+      if (typeof window.loadRoster === 'function') await window.loadRoster(); // full re-render
     } catch (e) {
       toast('error', 'Remove Failed', e.message);
     }
@@ -1307,6 +1247,13 @@
       toast('error', 'Excel Export Failed', e?.message || String(e));
     }
   };
+
+  // Init after jspreadsheet overrides are registered
+  window.addEventListener('load', () => {
+    window.loadRoster();
+    connectRosterWS();
+    setInterval(() => { if (typeof window.loadRoster === 'function') window.loadRoster(); }, 120000);
+  });
 
   let rosterResizeTimer = null;
   window.addEventListener('resize', () => {
